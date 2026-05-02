@@ -70,6 +70,12 @@ __pycache__
 vcpkg/
 
 CLAUDE.md
+AGENTS.md
+.claude/
+CodingAgentContext/
+
+# Log files
+*.log
 
 build_*/
 .cache/*

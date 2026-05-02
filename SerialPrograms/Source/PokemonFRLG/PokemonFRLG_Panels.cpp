@@ -14,6 +14,7 @@
 #include "Programs/Farming/PokemonFRLG_NuggetBridgeFarmer.h"
 #include "Programs/Farming/PokemonFRLG_PickupFarmer.h"
 #include "Programs/Farming/PokemonFRLG_EvTrainer.h"
+#include "Programs/Farming/PokemonFRLG_XPGrinder.h"
 #include "Programs/ShinyHunting/PokemonFRLG_GiftReset.h"
 #include "Programs/ShinyHunting/PokemonFRLG_LegendaryReset.h"
 #include "Programs/ShinyHunting/PokemonFRLG_LegendaryRunAway.h"
@@ -25,6 +26,8 @@
 #include "Programs/RngManipulation/PokemonFRLG_StarterRng.h"
 #include "Programs/RngManipulation/PokemonFRLG_GiftRng.h"
 #include "Programs/RngManipulation/PokemonFRLG_StaticRng.h"
+#include "Programs/TestPrograms/PokemonFRLG_KantoMapPositionTest.h"
+#include "Programs/TestPrograms/PokemonFRLG_MappingMode.h"
 #include "Programs/TestPrograms/PokemonFRLG_SoundListener.h"
 #include "Programs/TestPrograms/PokemonFRLG_ReadStats.h"
 #include "Programs/TestPrograms/PokemonFRLG_ReadBattleLevelUp.h"
@@ -52,6 +55,7 @@ std::vector<PanelEntry> PanelListFactory::make_panels() const{
     ret.emplace_back(make_single_switch_program<PickupFarmer_Descriptor, PickupFarmer>());
     ret.emplace_back(make_single_switch_program<EvTrainer_Descriptor, EvTrainer>());
     ret.emplace_back(make_single_switch_program<LuckyEggFarmer_Descriptor, LuckyEggFarmer>());
+    ret.emplace_back(make_single_switch_program<XPGrinder_Descriptor, XPGrinder>());
 
     //ret.emplace_back("---- General ----");
 
@@ -74,6 +78,10 @@ std::vector<PanelEntry> PanelListFactory::make_panels() const{
         ret.emplace_back(make_single_switch_program<GiftRng_Descriptor, GiftRng>());
         ret.emplace_back(make_single_switch_program<StaticRng_Descriptor, StaticRng>());
     }
+
+    ret.emplace_back("---- Tools ----");
+    ret.emplace_back(make_single_switch_program<MappingMode_Descriptor, MappingMode>());
+    ret.emplace_back(make_single_switch_program<KantoMapPositionTest_Descriptor, KantoMapPositionTest>());
 
     if (PreloadSettings::instance().DEVELOPER_MODE){
         ret.emplace_back("---- Developer Tools ----");

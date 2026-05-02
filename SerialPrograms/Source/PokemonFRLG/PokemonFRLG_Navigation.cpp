@@ -1101,6 +1101,141 @@ void home_black_border_check(ConsoleHandle& console, ProControllerContext& conte
 }
 
 
+void switch_party_lead_overworld(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed){
+    //  game_slot_1indexed is the 1-based party slot to promote to lead (must be 2–6).
+    //  Navigation convention used throughout this file:
+    //    {+1, 0} = right,  {-1, 0} = left
+    //    {0, -1} = down (south),  {0, +1} = up (north)
+    //  Party list: right from slot 1 enters the right column (slot 2).
+    //              down {0,-1} advances within the right column.
+    //  Sub-menu:   one {0,-1} down from option 1 (STATS) reaches option 2 (SWITCH).
+
+    if (game_slot_1indexed < 2){
+        return;
+    }
+
+    open_party_menu_from_overworld(console, context);
+
+    //  Navigate to target slot: right into the right column, then down (N-2) more times.
+    pbf_move_left_joystick(context, {+1, 0}, 200ms, 300ms);
+    for (int i = 2; i < game_slot_1indexed; i++){
+        pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+    }
+
+    //  Open the Pokémon's context sub-menu.
+    PartySelectionWatcher selection_open(COLOR_RED);
+    context.wait_for_all_requests();
+    int ret = run_until<ProControllerContext>(
+        console, context,
+        [](ProControllerContext& ctx){
+            pbf_press_button(ctx, BUTTON_A, 200ms, 1800ms);
+        },
+        { selection_open }
+    );
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "switch_party_lead_overworld(): Failed to open party selection sub-menu.",
+            console
+        );
+    }
+
+    //  One down moves to SWITCH (option 2 under STATS).
+    pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+    pbf_press_button(context, BUTTON_A, 200ms, 500ms);
+
+    //  Navigate back to slot 1: up to slot 2, then left.
+    for (int i = 2; i < game_slot_1indexed; i++){
+        pbf_move_left_joystick(context, {0, +1}, 200ms, 300ms);
+    }
+    pbf_move_left_joystick(context, {-1, 0}, 200ms, 300ms);
+
+    //  Confirm the swap.
+    pbf_press_button(context, BUTTON_A, 200ms, 800ms);
+
+    //  Close the party menu.
+    pbf_press_button(context, BUTTON_B, 200ms, 300ms);
+    pbf_press_button(context, BUTTON_B, 200ms, 800ms);
+    close_start_menu(console, context);
+    context.wait_for_all_requests();
+    console.log("Party lead swapped with slot " + std::to_string(game_slot_1indexed) + ".");
+}
+
+void select_forced_switch_slot(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed){
+    //  Called after spam_first_move() returns BattleResult::playerfainted when alive allies remain.
+    //  The game shows the forced-switch party screen after advancing the faint dialog.
+    //  Navigate to game_slot_1indexed and send that Pokémon into battle.
+
+    PartyMenuWatcher party_screen(COLOR_RED);
+    BattleMenuWatcher battle_menu(COLOR_RED);
+
+    //  Mash B to clear the faint dialog until the forced-switch party screen appears.
+    console.log("Forced switch: clearing faint dialog, waiting for party screen.");
+    context.wait_for_all_requests();
+    int ret = run_until<ProControllerContext>(
+        console, context,
+        [](ProControllerContext& ctx){
+            pbf_mash_button(ctx, BUTTON_B, 10000ms);
+        },
+        { party_screen }
+    );
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "select_forced_switch_slot(): Party switch screen did not appear after faint.",
+            console
+        );
+    }
+
+    //  Navigate to target slot.
+    if (game_slot_1indexed >= 2){
+        pbf_move_left_joystick(context, {+1, 0}, 200ms, 300ms);
+        for (int i = 2; i < game_slot_1indexed; i++){
+            pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+        }
+    }
+
+    //  Press A on the target Pokémon — this opens a context sub-menu
+    //  (SUMMARY / SEND OUT / CANCEL) rather than immediately sending them out.
+    PartySelectionWatcher selection_open(COLOR_RED);
+    context.wait_for_all_requests();
+    ret = run_until<ProControllerContext>(
+        console, context,
+        [](ProControllerContext& ctx){
+            pbf_press_button(ctx, BUTTON_A, 200ms, 1800ms);
+        },
+        { selection_open }
+    );
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "select_forced_switch_slot(): Context sub-menu did not appear after selecting Pokémon.",
+            console
+        );
+    }
+
+    //  One down from SUMMARY reaches SEND OUT (option 2), then confirm.
+    pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+    pbf_press_button(context, BUTTON_A, 200ms, 500ms);
+
+    //  Wait for the battle menu to confirm the new Pokémon is active.
+    context.wait_for_all_requests();
+    ret = wait_until(
+        console, context, std::chrono::milliseconds(10000),
+        { battle_menu }
+    );
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "select_forced_switch_slot(): Battle menu did not reappear after SEND OUT.",
+            console
+        );
+    }
+    context.wait_for_all_requests();
+    console.log("Forced switch complete: slot " + std::to_string(game_slot_1indexed) + " sent out.");
+}
+
+
 }
 }
 }

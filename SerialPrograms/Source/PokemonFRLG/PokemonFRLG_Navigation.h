@@ -76,6 +76,15 @@ enum class StartMenuContext {
 };
 void open_party_menu_from_overworld(ConsoleHandle& console, ProControllerContext& context, StartMenuContext menu_context = StartMenuContext::STANDARD);
 
+// Swap the Pokémon at game_slot_1indexed (2–6) into the lead (slot 1) via the overworld party menu SWITCH command.
+// Assumes the party menu is closed and the player is in the overworld.
+void switch_party_lead_overworld(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed);
+
+// After a player Pokémon faints in battle the game shows the forced-switch party screen.
+// This function navigates to game_slot_1indexed (2–6) and sends it out.
+// Call after spam_first_move() returns BattleResult::playerfainted when alive allies remain.
+void select_forced_switch_slot(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed);
+
 // Starting from the start menu, a sub-screen of the start menu, or the overworld, navigate to the bag
 void open_bag_from_overworld(ConsoleHandle& console, ProControllerContext& context, StartMenuContext menu_context = StartMenuContext::STANDARD);
 

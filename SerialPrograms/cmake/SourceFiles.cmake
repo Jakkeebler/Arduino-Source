@@ -1475,6 +1475,11 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Inference/Menus/PokemonFRLG_DexRegistrationDetector.h
     Source/PokemonFRLG/Inference/Sounds/PokemonFRLG_ShinySoundDetector.cpp
     Source/PokemonFRLG/Inference/Sounds/PokemonFRLG_ShinySoundDetector.h
+    Source/PokemonFRLG/Inference/Map/PokemonFRLG_KantoMapDetector.cpp
+    Source/PokemonFRLG/Inference/Map/PokemonFRLG_KantoMapDetector.h
+    Source/PokemonFRLG/Inference/Map/PokemonFRLG_KantoMapMasks_Generated.h
+    Source/PokemonFRLG/Inference/Map/PokemonFRLG_KantoMapPathfinder.cpp
+    Source/PokemonFRLG/Inference/Map/PokemonFRLG_KantoMapPathfinder.h
     Source/PokemonFRLG/Inference/PokemonFRLG_BattleSelectionArrowDetector.cpp
     Source/PokemonFRLG/Inference/PokemonFRLG_BattleSelectionArrowDetector.h
     Source/PokemonFRLG/Inference/PokemonFRLG_SelectionArrowDetector.cpp
@@ -1511,10 +1516,16 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_NuggetBridgeFarmer.h
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_PickupFarmer.cpp
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_PickupFarmer.h
+    Source/PokemonFRLG/Programs/Farming/PokemonFRLG_XPGrinder.cpp
+    Source/PokemonFRLG/Programs/Farming/PokemonFRLG_XPGrinder.h
     Source/PokemonFRLG/Programs/PokemonFRLG_BattleMenuNavigation.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_BattleMenuNavigation.h
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_EvTrainer.cpp
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_EvTrainer.h
+    Source/PokemonFRLG/Programs/PokemonFRLG_KantoMapNavigator.cpp
+    Source/PokemonFRLG/Programs/PokemonFRLG_KantoMapNavigator.h
+    Source/PokemonFRLG/Programs/PokemonFRLG_RoutePaths.cpp
+    Source/PokemonFRLG/Programs/PokemonFRLG_RoutePaths.h
     Source/PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.h
     Source/PokemonFRLG/Programs/ShinyHunting/PokemonFRLG_GiftReset.cpp
@@ -1549,6 +1560,10 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_GiftRng.h
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_StaticRng.cpp
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_StaticRng.h
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_KantoMapPositionTest.cpp
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_KantoMapPositionTest.h
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_MappingMode.cpp
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_MappingMode.h
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_SoundListener.cpp
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_SoundListener.h
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_ReadStats.cpp
