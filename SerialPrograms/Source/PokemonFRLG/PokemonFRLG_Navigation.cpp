@@ -356,8 +356,6 @@ BattleResult spam_first_move(ConsoleHandle& console, ProControllerContext& conte
         BattleFaintWatcher pokemon_fainted(COLOR_RED);
         BattleOpponentFaintWatcher opponent_fainted(COLOR_RED);
         BlackScreenWatcher battle_ended(COLOR_RED);
-        BattleOutOfPpWatcher out_of_pp(COLOR_RED);
-        AdvanceBattleDialogWatcher out_of_pp_dialog(COLOR_RED);
 
         int ret = run_until<ProControllerContext>(
             console, context,
@@ -373,25 +371,32 @@ BattleResult spam_first_move(ConsoleHandle& console, ProControllerContext& conte
         case 0:
             console.log("Using first move.");
             context.wait_for_all_requests();
-            ret2 = run_until<ProControllerContext>(
-                console, context,
-                [](ProControllerContext& context){
-                    pbf_press_button(context, BUTTON_A, 200ms, 300ms); // leave enough time for PP color to be detected
-                    pbf_press_button(context, BUTTON_A, 200ms, 300ms);
-                    pbf_mash_button(context, BUTTON_A, 500ms);
-                    context.wait_for_all_requests();
-                },
-                { out_of_pp, out_of_pp_dialog }
-            );
-            if (ret2 < 0){
-                times_moved++;
-            } else {
+            {
+                //  Press A to open the FIGHT move list, then check for 0 PP from
+                //  the move list display itself. BattleOutOfPpWatcher only fires on
+                //  red PP digits in the move list — it cannot fire on opponent move
+                //  dialogs or faint dialogs, eliminating all false positives.
+                BattleOutOfPpWatcher pp_watch(COLOR_RED);
+                ret2 = run_until<ProControllerContext>(
+                    console, context,
+                    [](ProControllerContext& ctx){
+                        pbf_press_button(ctx, BUTTON_A, 200ms, 400ms);
+                    },
+                    { pp_watch }
+                );
+            }
+            if (ret2 >= 0){
                 console.log("Out of PP, fleeing battle.");
                 pbf_mash_button(context, BUTTON_B, 2000ms);
                 flee_battle(console, context);
                 context.wait_for_all_requests();
                 return BattleResult::outofpp;
             }
+            //  PP available — move list is open, cursor on move 1. Select it.
+            pbf_press_button(context, BUTTON_A, 200ms, 300ms);
+            pbf_mash_button(context, BUTTON_A, 500ms);
+            context.wait_for_all_requests();
+            times_moved++;
             continue;
         case 1:
             console.log("Player Pokemon fainted.");
@@ -1169,25 +1174,73 @@ void select_forced_switch_slot(ConsoleHandle& console, ProControllerContext& con
     PartyMenuWatcher party_screen(COLOR_RED);
     BattleMenuWatcher battle_menu(COLOR_RED);
 
-    //  Mash B to clear the faint dialog until the forced-switch party screen appears.
-    console.log("Forced switch: clearing faint dialog, waiting for party screen.");
+    //  After the active Pokémon faints, the game shows a sequence:
+    //    1. "<NAME> fainted!" advance dialog (red triangle on teal background)
+    //    2. "Use next POKéMON?" Yes/No prompt (default cursor on Yes)
+    //    3. Forced-switch party screen
+    //
+    //  Critical: we must NOT press B at step 2 — B selects "No" and forfeits
+    //  the battle (causes a whiteout). To avoid blowing past the prompt, we
+    //  identify the current screen on every iteration before pressing anything,
+    //  and we use A (not B) so that even if the Yes/No detector misses a frame,
+    //  pressing A on the prompt still selects Yes.
+    //
+    //  A is safe on every screen we may encounter here:
+    //    - A on the faint dialog → advances
+    //    - A on the Yes/No prompt (cursor defaults to Yes) → selects Yes
+    //    - A on the party screen → would open the slot sub-menu (bad), so we
+    //      detect the party screen first and break out before pressing A.
+    console.log("Forced switch: state-machine loop until party screen appears.");
     context.wait_for_all_requests();
-    int ret = run_until<ProControllerContext>(
-        console, context,
-        [](ProControllerContext& ctx){
-            pbf_mash_button(ctx, BUTTON_B, 10000ms);
-        },
-        { party_screen }
-    );
-    if (ret < 0){
+
+    AdvanceBattleDialogWatcher faint_dialog(COLOR_RED);
+    BattleLearnDialogWatcher use_next_prompt(COLOR_RED);
+
+    bool reached_party = false;
+    for (int iteration = 0; iteration < 20; iteration++){
+        int state = wait_until(
+            console, context,
+            std::chrono::seconds(5),
+            { faint_dialog, use_next_prompt, party_screen }
+        );
+
+        if (state == 2){
+            console.log("State: party screen detected. Proceeding to slot navigation.");
+            reached_party = true;
+            break;
+        }
+
+        //  state 0 = faint dialog, state 1 = Yes/No prompt, -1 = unrecognized.
+        //  In every case A is the correct/safe button to press: it advances the
+        //  faint dialog, confirms Yes on the prompt, and at worst on an
+        //  unrecognized in-battle dialog it advances or repeats safely.
+        const char* state_name =
+            state == 0 ? "faint advance dialog" :
+            state == 1 ? "\"Use next POKéMON?\" Yes/No prompt" :
+            "unrecognized (5s timeout)";
+        console.log(std::string("State: ") + state_name + ". Pressing A.");
+        pbf_press_button(context, BUTTON_A, 200ms, 1000ms);
+        context.wait_for_all_requests();
+    }
+    if (!reached_party){
         OperationFailedException::fire(
             ErrorReport::SEND_ERROR_REPORT,
-            "select_forced_switch_slot(): Party switch screen did not appear after faint.",
+            "select_forced_switch_slot(): Party screen did not appear after 20 advance iterations.",
             console
         );
     }
 
-    //  Navigate to target slot.
+    //  The forced-switch party screen may start with the cursor on the first
+    //  non-fainted slot rather than slot 1. Press left once to guarantee we
+    //  land on slot 1 (the large left panel) before doing slot arithmetic.
+    //  Pressing left from slot 1 is a no-op; from any right-column slot it
+    //  returns to slot 1.
+    context.wait_for_all_requests();
+    pbf_wait(context, 500ms);           // let queued B presses clear and screen settle
+    context.wait_for_all_requests();
+    pbf_move_left_joystick(context, {-1, 0}, 200ms, 300ms); // reset to slot 1
+
+    //  Navigate to target slot from slot 1.
     if (game_slot_1indexed >= 2){
         pbf_move_left_joystick(context, {+1, 0}, 200ms, 300ms);
         for (int i = 2; i < game_slot_1indexed; i++){
@@ -1199,7 +1252,7 @@ void select_forced_switch_slot(ConsoleHandle& console, ProControllerContext& con
     //  (SUMMARY / SEND OUT / CANCEL) rather than immediately sending them out.
     PartySelectionWatcher selection_open(COLOR_RED);
     context.wait_for_all_requests();
-    ret = run_until<ProControllerContext>(
+    int ret = run_until<ProControllerContext>(
         console, context,
         [](ProControllerContext& ctx){
             pbf_press_button(ctx, BUTTON_A, 200ms, 1800ms);
@@ -1214,8 +1267,8 @@ void select_forced_switch_slot(ConsoleHandle& console, ProControllerContext& con
         );
     }
 
-    //  One down from SUMMARY reaches SEND OUT (option 2), then confirm.
-    pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+    //  In the in-battle forced-switch sub-menu, SEND OUT is the first/default option.
+    //  Press A directly — no navigation required.
     pbf_press_button(context, BUTTON_A, 200ms, 500ms);
 
     //  Wait for the battle menu to confirm the new Pokémon is active.

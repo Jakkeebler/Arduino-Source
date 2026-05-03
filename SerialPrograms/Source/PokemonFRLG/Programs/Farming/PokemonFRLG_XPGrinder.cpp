@@ -284,6 +284,15 @@ struct PartyState{
     void on_swap(int rotation_from, int rotation_to){
         std::swap(game_slot[rotation_from], game_slot[rotation_to]);
     }
+
+    //  Returns the rotation index whose current game slot equals the given 1-indexed slot.
+    //  Returns -1 if not found.
+    int find_rotation_with_game_slot(int slot) const{
+        for (int i = 0; i < party_size; i++){
+            if (game_slot[i] == slot) return i;
+        }
+        return -1;
+    }
 };
 
 } // namespace
@@ -381,6 +390,26 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                     stats.battles_won++;
                     bool move_learned = exit_wild_battle(env.console, context, !!STOP_ON_MOVE_LEARN, !!PREVENT_EVOLUTION);
 
+                    //  exit_wild_battle returns on the battle-end black fade (currently
+                    //  black). Wait for the overworld fade-in to complete before any
+                    //  subsequent menu navigation; pressing START while the screen is
+                    //  still mid-fade can drop inputs and corrupt the post-battle
+                    //  switch_party_lead_overworld call below.
+                    {
+                        BlackScreenOverWatcher overworld_entered(COLOR_RED);
+                        int over = wait_until(
+                            env.console, context,
+                            std::chrono::seconds(5),
+                            { overworld_entered }
+                        );
+                        if (over < 0){
+                            env.log("Overworld fade-in not detected within 5s after battle exit. Proceeding anyway.", COLOR_BLUE);
+                        }else{
+                            env.log("Overworld visible after battle exit.", COLOR_BLUE);
+                        }
+                        context.wait_for_all_requests();
+                    }
+
                     env.update_stats();
                     send_program_status_notification(
                         env, NOTIFICATION_STATUS_UPDATE,
@@ -415,6 +444,42 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         }else{
                             uint64_t until_next = BATTLES_PER_HEAL_TRIP - (won % BATTLES_PER_HEAL_TRIP);
                             env.log("Battle " + std::to_string(won) + " won. " + std::to_string(until_next) + " until next cadence heal trip.");
+                        }
+                    }
+
+                    //  After a forced switch the winner is still in their original slot, not
+                    //  slot 1.  Swap them into slot 1 now so the next encounter starts cleanly.
+                    if (multi_party && party.game_slot[party.current_rotation] != 1){
+                        int winner_slot = party.game_slot[party.current_rotation];
+                        env.log("Post-battle normalize: swapping game slot " + std::to_string(winner_slot) + " into slot 1.", COLOR_BLUE);
+                        //  Try once; on transient failure (most common cause is the
+                        //  overworld not being fully ready), back out of any partial
+                        //  menu state and retry once before surfacing a fatal error.
+                        bool swapped = false;
+                        for (int attempt = 0; attempt < 2 && !swapped; attempt++){
+                            try{
+                                switch_party_lead_overworld(env.console, context, winner_slot);
+                                swapped = true;
+                            }catch (OperationFailedException& e){
+                                stats.errors++;
+                                env.log(
+                                    "Post-battle normalize attempt " + std::to_string(attempt + 1) +
+                                    " failed: " + e.message() + ". Recovering.",
+                                    COLOR_RED
+                                );
+                                if (attempt == 1){
+                                    throw;
+                                }
+                                //  Back out of any partial menu and let the overworld settle.
+                                pbf_mash_button(context, BUTTON_B, 2000ms);
+                                context.wait_for_all_requests();
+                                pbf_wait(context, 500ms);
+                                context.wait_for_all_requests();
+                            }
+                        }
+                        int old_slot1_rotation = party.find_rotation_with_game_slot(1);
+                        if (old_slot1_rotation >= 0){
+                            party.on_swap(party.current_rotation, old_slot1_rotation);
                         }
                     }
 
