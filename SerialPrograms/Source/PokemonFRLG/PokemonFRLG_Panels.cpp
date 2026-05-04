@@ -33,6 +33,9 @@
 #include "Programs/TestPrograms/PokemonFRLG_ReadBattleLevelUp.h"
 #include "Programs/TestPrograms/PokemonFRLG_ReadTrainerId.h"
 #include "Programs/TestPrograms/PokemonFRLG_ReadEncounter.h"
+#include "Programs/TestPrograms/PokemonFRLG_ReadParty.h"
+#include "Programs/TestPrograms/PokemonFRLG_ScanParty.h"
+#include "Programs/TestPrograms/PokemonFRLG_SummaryCalibrator.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -82,15 +85,14 @@ std::vector<PanelEntry> PanelListFactory::make_panels() const{
     ret.emplace_back("---- Tools ----");
     ret.emplace_back(make_single_switch_program<MappingMode_Descriptor, MappingMode>());
     ret.emplace_back(make_single_switch_program<KantoMapPositionTest_Descriptor, KantoMapPositionTest>());
-
-    if (PreloadSettings::instance().DEVELOPER_MODE){
-        ret.emplace_back("---- Developer Tools ----");
-        ret.emplace_back(make_single_switch_program<SoundListener_Descriptor, SoundListener>());
-        ret.emplace_back(make_single_switch_program<ReadStats_Descriptor, ReadStats>());
-        ret.emplace_back(make_single_switch_program<ReadBattleLevelUp_Descriptor, ReadBattleLevelUp>());
-        ret.emplace_back(make_single_switch_program<ReadTrainerId_Descriptor, ReadTrainerId>());
-        ret.emplace_back(make_single_switch_program<ReadEncounter_Descriptor, ReadEncounter>());    
-    }
+    ret.emplace_back(make_single_switch_program<ScanParty_Descriptor, ScanParty>());
+    ret.emplace_back(make_single_switch_program<SummaryCalibrator_Descriptor, SummaryCalibrator>());
+    ret.emplace_back(make_single_switch_program<SoundListener_Descriptor, SoundListener>());
+    ret.emplace_back(make_single_switch_program<ReadStats_Descriptor, ReadStats>());
+    ret.emplace_back(make_single_switch_program<ReadBattleLevelUp_Descriptor, ReadBattleLevelUp>());
+    ret.emplace_back(make_single_switch_program<ReadTrainerId_Descriptor, ReadTrainerId>());
+    ret.emplace_back(make_single_switch_program<ReadEncounter_Descriptor, ReadEncounter>());
+    ret.emplace_back(make_single_switch_program<ReadParty_Descriptor, ReadParty>());
 
     return ret;
 }

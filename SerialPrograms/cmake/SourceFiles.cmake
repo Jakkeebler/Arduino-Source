@@ -1449,6 +1449,10 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonBDSP/Resources/PokemonBDSP_NameDatabase.h
     Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_BattleDialogs.cpp
     Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_BattleDialogs.h
+    Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_LearnMoveDialogReader.cpp
+    Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_LearnMoveDialogReader.h
+    Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_ForgetMoveScreen.cpp
+    Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_ForgetMoveScreen.h
     Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_PartyDialogs.cpp
     Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_PartyDialogs.h
     Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_DialogDetector.cpp
@@ -1482,6 +1486,10 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Inference/Map/PokemonFRLG_KantoMapPathfinder.h
     Source/PokemonFRLG/Inference/PokemonFRLG_BattleSelectionArrowDetector.cpp
     Source/PokemonFRLG/Inference/PokemonFRLG_BattleSelectionArrowDetector.h
+    Source/PokemonFRLG/Inference/PokemonFRLG_MoveNameOCR.cpp
+    Source/PokemonFRLG/Inference/PokemonFRLG_MoveNameOCR.h
+    Source/PokemonFRLG/Inference/PokemonFRLG_PartySummaryReader.cpp
+    Source/PokemonFRLG/Inference/PokemonFRLG_PartySummaryReader.h
     Source/PokemonFRLG/Inference/PokemonFRLG_SelectionArrowDetector.cpp
     Source/PokemonFRLG/Inference/PokemonFRLG_SelectionArrowDetector.h
     Source/PokemonFRLG/Inference/PokemonFRLG_ShinySymbolDetector.cpp
@@ -1504,6 +1512,14 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Inference/PokemonFRLG_WildEncounterReader.h
     Source/PokemonFRLG/PokemonFRLG_Navigation.cpp
     Source/PokemonFRLG/PokemonFRLG_Navigation.h
+    Source/PokemonFRLG/Resources/PokemonFRLG_MoveData.cpp
+    Source/PokemonFRLG/Resources/PokemonFRLG_MoveData.h
+    Source/PokemonFRLG/Resources/PokemonFRLG_SpeciesData.cpp
+    Source/PokemonFRLG/Resources/PokemonFRLG_SpeciesData.h
+    Source/PokemonFRLG/Resources/PokemonFRLG_Learnsets.cpp
+    Source/PokemonFRLG/Resources/PokemonFRLG_Learnsets.h
+    Source/PokemonFRLG/Resources/PokemonFRLG_Evolutions.cpp
+    Source/PokemonFRLG/Resources/PokemonFRLG_Evolutions.h
     Source/PokemonFRLG/PokemonFRLG_Panels.cpp
     Source/PokemonFRLG/PokemonFRLG_Panels.h
     Source/PokemonFRLG/PokemonFRLG_Settings.cpp
@@ -1518,6 +1534,10 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_PickupFarmer.h
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_XPGrinder.cpp
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_XPGrinder.h
+    Source/PokemonFRLG/Programs/Farming/PokemonFRLG_XpGrinderTeamTable.cpp
+    Source/PokemonFRLG/Programs/Farming/PokemonFRLG_XpGrinderTeamTable.h
+    Source/PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.cpp
+    Source/PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h
     Source/PokemonFRLG/Programs/PokemonFRLG_BattleMenuNavigation.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_BattleMenuNavigation.h
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_EvTrainer.cpp
@@ -1528,6 +1548,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/PokemonFRLG_RoutePaths.h
     Source/PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.h
+    Source/PokemonFRLG/Programs/PokemonFRLG_PartyScanner.cpp
+    Source/PokemonFRLG/Programs/PokemonFRLG_PartyScanner.h
     Source/PokemonFRLG/Programs/ShinyHunting/PokemonFRLG_GiftReset.cpp
     Source/PokemonFRLG/Programs/ShinyHunting/PokemonFRLG_GiftReset.h
     Source/PokemonFRLG/Programs/ShinyHunting/PokemonFRLG_LegendaryReset.cpp
@@ -1574,6 +1596,12 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_ReadEncounter.h
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_ReadBattleLevelUp.cpp
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_ReadBattleLevelUp.h
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_ReadParty.cpp
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_ReadParty.h
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_ScanParty.cpp
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_ScanParty.h
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_SummaryCalibrator.cpp
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_SummaryCalibrator.h
     Source/PokemonHome/Inference/PokemonHome_BallReader.cpp
     Source/PokemonHome/Inference/PokemonHome_BallReader.h
     Source/PokemonHome/Inference/PokemonHome_BoxGenderDetector.cpp

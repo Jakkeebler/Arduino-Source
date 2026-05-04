@@ -29,6 +29,12 @@ int test_pokemonFRLG_BattleMenuDetector(const ImageViewRGB32& image, bool target
 
 int test_pokemonFRLG_PrizeSelectDetector(const ImageViewRGB32& image, bool target);
 
+int test_pokemonFRLG_PartySummaryReader_dex(const ImageViewRGB32& image, int target);
+int test_pokemonFRLG_PartySummaryReader_moves(const ImageViewRGB32& image, const std::vector<std::string>& expected);
+int test_pokemonFRLG_LearnMoveDialogReader(const ImageViewRGB32& image, const std::vector<std::string>& expected);
+int test_pokemonFRLG_ForgetMoveScreenDetector(const ImageViewRGB32& image, bool target);
+int test_pokemonFRLG_ForgetMoveScreenReader(const ImageViewRGB32& image, const std::vector<std::string>& expected);
+
 }
 
 #endif

@@ -25,6 +25,24 @@ const ImageFloatBox BATTLE_MENU_ARROW_BOX(0.768, 0.868, 0.212, 0.159);
 
 const int BATTLE_MENU_COLS = 2;
 
+//  Approximate FIGHT-menu move-list arrow positions (2x2 grid).
+//  These are placeholder estimates; relative geometry is what matters for
+//  the closest-arrow match in move_cursor_2d_impl, but if cursor navigation
+//  misbehaves these should be re-calibrated against an actual screenshot.
+const ImageFloatBox MOVE_LIST_ARROW_BOX(0.020, 0.770, 0.380, 0.180);
+const int MOVE_LIST_COLS = 2;
+const int MOVE_LIST_OPTION_COUNT = 4;
+
+ImageFloatBox box_for_move_slot(int index){
+    switch (index){
+    case 0: return ImageFloatBox(0.040, 0.785, 0.030, 0.060);  // Move 1: top-left
+    case 1: return ImageFloatBox(0.230, 0.785, 0.030, 0.060);  // Move 2: top-right
+    case 2: return ImageFloatBox(0.040, 0.870, 0.030, 0.060);  // Move 3: bottom-left
+    case 3: return ImageFloatBox(0.230, 0.870, 0.030, 0.060);  // Move 4: bottom-right
+    default: return ImageFloatBox(0.040, 0.785, 0.030, 0.060);
+    }
+}
+
 bool move_cursor_2d_impl(
     ConsoleHandle& console,
     ProControllerContext& context,
@@ -105,6 +123,17 @@ bool move_cursor_to_option(ConsoleHandle& console, ProControllerContext& context
         SAFARI_BATTLE_MENU_OPTION_COUNT,
         BATTLE_MENU_COLS,
         [](int i){ return BattleSelectionArrowDetector::box_for_option(static_cast<SafariBattleMenuOption>(i)); },
+        static_cast<int>(destination)
+    );
+}
+
+bool move_cursor_to_move_slot(ConsoleHandle& console, ProControllerContext& context, MoveSlot destination){
+    return move_cursor_2d_impl(
+        console, context,
+        MOVE_LIST_ARROW_BOX,
+        MOVE_LIST_OPTION_COUNT,
+        MOVE_LIST_COLS,
+        [](int i){ return box_for_move_slot(i); },
         static_cast<int>(destination)
     );
 }

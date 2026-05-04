@@ -13,8 +13,11 @@
 #include "CommonTools/VisualDetectors/FrozenImageDetector.h"
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_PushButtons.h"
 #include "Pokemon/Pokemon_Strings.h"
+#include "Pokemon/Inference/Pokemon_NameReader.h"
 #include "PokemonFRLG/Programs/PokemonFRLG_RoutePaths.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_PartyScanner.h"
 #include "PokemonFRLG/PokemonFRLG_Navigation.h"
+#include "PokemonFRLG_MoveLearnDecider.h"
 #include "PokemonFRLG_XPGrinder.h"
 
 namespace PokemonAutomation{
@@ -76,11 +79,6 @@ XPGrinder::XPGrinder()
         LockMode::LOCK_WHILE_RUNNING,
         false
     )
-    , STOP_ON_MOVE_LEARN(
-        "<b>Quit when a new move is learned</b><br>Stop this program when a new move is learned. If unchecked, new moves will not be learned.",
-        LockMode::LOCK_WHILE_RUNNING,
-        false
-    )
     , IGNORE_SHINIES(
         "<b>Ignore shinies</b><br>Do not stop the program when a wild shiny is encountered.",
         LockMode::LOCK_WHILE_RUNNING,
@@ -106,6 +104,17 @@ XPGrinder::XPGrinder()
         LockMode::LOCK_WHILE_RUNNING,
         1, 1, 6
     )
+    , LANGUAGE(
+        "<b>Game Language:</b>",
+        Pokemon::PokemonNameReader::instance().languages(),
+        LockMode::LOCK_WHILE_RUNNING, true
+    )
+    , AUTO_SCAN_ON_START(
+        "<b>Auto-scan party at program start:</b><br>Walk the party menu and OCR each Pokémon's species/moves before grinding. Required for the smart move-learn decider to know what each Pokémon currently has.",
+        LockMode::LOCK_WHILE_RUNNING,
+        true
+    )
+    , TEAM_TABLE()
     , HEAL_ON_FAINT(
         "<b>Heal on faint:</b><br>When the lead party faints, accept the whiteout and resume grinding instead of stopping. The game will warp you to the last visited Pokemon Center and fully heal the party automatically.",
         LockMode::LOCK_WHILE_RUNNING,
@@ -152,10 +161,12 @@ XPGrinder::XPGrinder()
 {
     PA_ADD_OPTION(MAX_BATTLES);
     PA_ADD_OPTION(PREVENT_EVOLUTION);
-    PA_ADD_OPTION(STOP_ON_MOVE_LEARN);
     PA_ADD_OPTION(IGNORE_SHINIES);
     PA_ADD_OPTION(ROTATION_MODE);
     PA_ADD_OPTION(PARTY_SIZE);
+    PA_ADD_OPTION(LANGUAGE);
+    PA_ADD_OPTION(AUTO_SCAN_ON_START);
+    PA_ADD_OPTION(TEAM_TABLE);
     PA_ADD_OPTION(HEAL_ON_FAINT);
     PA_ADD_OPTION(HEAL_ON_OUT_OF_PP);
     PA_ADD_OPTION(BATTLES_PER_HEAL_TRIP);
@@ -239,6 +250,9 @@ struct PartyState{
     int game_slot[6];           // game_slot[rotation_index] = current 1-indexed game slot
     bool fainted[6] = {};
     bool out_of_pp[6] = {};
+    //  Cached current move slugs per rotation index, refreshed by scan_party()
+    //  at start and scan_party_slot() after each move-learn.
+    std::array<std::string, 4> current_moves[6];
 
     explicit PartyState(int size)
         : party_size(size)
@@ -247,6 +261,9 @@ struct PartyState{
             game_slot[i] = i + 1;  // game slots are 1-indexed
             fainted[i] = false;
             out_of_pp[i] = false;
+            for (int m = 0; m < 4; m++){
+                current_moves[i][m].clear();
+            }
         }
     }
 
@@ -317,7 +334,6 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
     env.log(
         "Config: MAX_BATTLES=" + std::to_string((uint64_t)MAX_BATTLES) +
         "; PREVENT_EVOLUTION=" + bool_str(PREVENT_EVOLUTION) +
-        "; STOP_ON_MOVE_LEARN=" + bool_str(STOP_ON_MOVE_LEARN) +
         "; IGNORE_SHINIES=" + bool_str(IGNORE_SHINIES) +
         "; ROTATION_MODE=" + std::to_string((int)(RotationMode)ROTATION_MODE) +
         "; PARTY_SIZE=" + std::to_string(party_size) +
@@ -332,6 +348,48 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
     uint8_t failed_encounters = 0;
     bool stop_program = false;
     PartyState party(party_size);
+
+    if (AUTO_SCAN_ON_START){
+        env.log("Auto-scanning party (" + std::to_string(party_size) + " slot(s)) before grinding.", COLOR_BLUE);
+        try{
+            std::vector<PartyScanResult> scan = scan_party(env, context, LANGUAGE, party_size);
+            //  Rotation index = scan order (slot_1indexed - 1) at startup.
+            for (const PartyScanResult& r : scan){
+                int rot = r.slot_1indexed - 1;
+                if (rot >= 0 && rot < 6){
+                    party.current_moves[rot] = r.read.move_slugs;
+                    //  Auto-update the team-table species cell when the scan
+                    //  identifies a species that's different from (or absent
+                    //  in) the row.
+                    if (!r.species_slug.empty() && r.species_slug != TEAM_TABLE.species_for((size_t)rot)){
+                        env.log(
+                            "Slot " + std::to_string(r.slot_1indexed) +
+                            ": detected species '" + r.species_slug +
+                            "' (was '" + TEAM_TABLE.species_for((size_t)rot) + "'). Updating team table.",
+                            COLOR_BLUE
+                        );
+                        TEAM_TABLE.set_species((size_t)rot, r.species_slug);
+                    }
+                }
+            }
+        }catch (OperationFailedException& e){
+            env.log(std::string("Auto-scan failed: ") + e.message() + ". Continuing with empty move cache (decider will treat all moves as unknown).", COLOR_RED);
+            stats.errors++;
+        }
+    }
+
+    //  Warn the user about any desired moves that the species (and its
+    //  evolution chain) cannot learn. Non-blocking — the user can still run
+    //  with mismatched picks if they want to.
+    {
+        std::vector<std::string> warnings = TEAM_TABLE.validate_against_learnsets();
+        for (const std::string& w : warnings){
+            env.log(std::string("Team-table validation warning: ") + w, COLOR_RED);
+        }
+        if (warnings.empty()){
+            env.log("Team-table validation: all desired moves are in their species' chain learnsets.", COLOR_BLUE);
+        }
+    }
 
     while (!stop_program && (MAX_BATTLES == 0 || stats.battles_won.load() < MAX_BATTLES)){
         try{
@@ -383,12 +441,21 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
             //  Inner battle loop: handles faint-triggered mid-battle switches.
             bool battle_ongoing = true;
             while (battle_ongoing){
-                BattleResult battle_result = spam_first_move(env.console, context);
+                size_t table_index = (size_t)party.current_rotation;
+                MoveLearnDecider decider = TEAM_TABLE.make_decider(table_index);
+                std::vector<size_t> priority = decider.battle_move_priority(
+                    party.current_moves[party.current_rotation]
+                );
+
+                BattleResult battle_result = spam_first_move(env.console, context, priority);
                 switch (battle_result){
 
                 case BattleResult::opponentfainted:{
                     stats.battles_won++;
-                    bool move_learned = exit_wild_battle(env.console, context, !!STOP_ON_MOVE_LEARN, !!PREVENT_EVOLUTION);
+                    bool move_learned = exit_wild_battle(
+                        env.console, context, false, !!PREVENT_EVOLUTION,
+                        &decider, LANGUAGE
+                    );
 
                     //  exit_wild_battle returns on the battle-end black fade (currently
                     //  black). Wait for the overworld fade-in to complete before any
@@ -416,20 +483,29 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         "Grinding experience."
                     );
 
-                    if (move_learned && STOP_ON_MOVE_LEARN){
-                        VideoSnapshot screen = env.console.video().snapshot();
-                        send_program_notification(
-                            env,
-                            NOTIFICATION_STATUS_UPDATE,
-                            COLOR_BLUE,
-                            "Stopping: move learned.",
-                            {}, "",
-                            screen,
-                            true
-                        );
-                        stop_program = true;
-                        battle_ongoing = false;
-                        break;
+                    if (move_learned){
+                        env.log("Move learn occurred. Rescanning slot " + std::to_string(party.current_rotation + 1) + " to refresh move cache.", COLOR_BLUE);
+                        try{
+                            PartyScanResult r = scan_party_slot(
+                                env, context, LANGUAGE, party.current_rotation + 1
+                            );
+                            party.current_moves[party.current_rotation] = r.read.move_slugs;
+                            //  Evolutions can also fire on level-up. If the
+                            //  detected species changed, update the table row
+                            //  so subsequent battles use the new species.
+                            if (!r.species_slug.empty() && r.species_slug != TEAM_TABLE.species_for((size_t)party.current_rotation)){
+                                env.log(
+                                    "Slot " + std::to_string(party.current_rotation + 1) +
+                                    " evolved: '" + TEAM_TABLE.species_for((size_t)party.current_rotation) +
+                                    "' -> '" + r.species_slug + "'. Updating team table.",
+                                    COLOR_BLUE
+                                );
+                                TEAM_TABLE.set_species((size_t)party.current_rotation, r.species_slug);
+                            }
+                        }catch (OperationFailedException& e){
+                            env.log(std::string("Post-learn rescan failed: ") + e.message() + ". Move cache may be stale.", COLOR_RED);
+                            stats.errors++;
+                        }
                     }
 
                     if (BATTLES_PER_HEAL_TRIP > 0){

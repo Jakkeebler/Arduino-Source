@@ -7,6 +7,7 @@
  */
 
 #include "CommonFramework/Exceptions/OperationFailedException.h"
+#include "CommonFramework/VideoPipeline/VideoFeed.h"
 #include "CommonTools/Random.h"
 #include "CommonTools/Async/InferenceRoutines.h"
 #include "CommonTools/StartupChecks/StartProgramChecks.h"
@@ -30,6 +31,10 @@
 #include "PokemonFRLG/Inference/Map/PokemonFRLG_MapDetector.h"
 #include "PokemonFRLG/Inference/PokemonFRLG_BattlePokemonDetector.h"
 #include "PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_BattleMenuNavigation.h"
+#include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h"
+#include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_LearnMoveDialogReader.h"
+#include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_ForgetMoveScreen.h"
 #include "PokemonFRLG_Navigation.h"
 
 namespace PokemonAutomation{
@@ -334,7 +339,23 @@ bool handle_encounter(ConsoleHandle& console, ProControllerContext& context, boo
     return false;
 }
 
-BattleResult spam_first_move(ConsoleHandle& console, ProControllerContext& context){
+BattleResult spam_first_move(
+    ConsoleHandle& console, ProControllerContext& context,
+    const std::vector<size_t>& move_priority
+){
+    //  Effective priority list: drop out-of-range entries; if empty, default to slot 0.
+    std::vector<size_t> priority;
+    priority.reserve(move_priority.size());
+    for (size_t s : move_priority){
+        if (s < 4){
+            priority.push_back(s);
+        }
+    }
+    if (priority.empty()){
+        priority.push_back(0);
+    }
+    const bool single_default_slot = (priority.size() == 1 && priority[0] == 0);
+
     uint16_t errors = 0;
     uint16_t times_moved = 0;
     while (true){
@@ -343,13 +364,13 @@ BattleResult spam_first_move(ConsoleHandle& console, ProControllerContext& conte
                 ErrorReport::SEND_ERROR_REPORT,
                 "spam_first_move(): Failed to use move 5 times.",
                 console
-            );  
+            );
         } else if (times_moved > 50){
             OperationFailedException::fire(
                 ErrorReport::SEND_ERROR_REPORT,
                 "spam_first_move(): More than 50 move uses detected.",
                 console
-            );  
+            );
         }
 
         BattleMenuWatcher battle_menu(COLOR_RED);
@@ -366,18 +387,17 @@ BattleResult spam_first_move(ConsoleHandle& console, ProControllerContext& conte
             { battle_menu, pokemon_fainted, opponent_fainted, battle_ended }
         );
 
-        int ret2;
         switch (ret){
-        case 0:
-            console.log("Using first move.");
+        case 0: {
             context.wait_for_all_requests();
+            //  Press A on FIGHT to open the move list, then probe each priority
+            //  slot in order. The BattleOutOfPpWatcher reads the currently
+            //  highlighted slot's PP region, so we re-check it after each
+            //  cursor move.
+            int initial_pp_ret;
             {
-                //  Press A to open the FIGHT move list, then check for 0 PP from
-                //  the move list display itself. BattleOutOfPpWatcher only fires on
-                //  red PP digits in the move list — it cannot fire on opponent move
-                //  dialogs or faint dialogs, eliminating all false positives.
                 BattleOutOfPpWatcher pp_watch(COLOR_RED);
-                ret2 = run_until<ProControllerContext>(
+                initial_pp_ret = run_until<ProControllerContext>(
                     console, context,
                     [](ProControllerContext& ctx){
                         pbf_press_button(ctx, BUTTON_A, 200ms, 400ms);
@@ -385,26 +405,74 @@ BattleResult spam_first_move(ConsoleHandle& console, ProControllerContext& conte
                     { pp_watch }
                 );
             }
-            if (ret2 >= 0){
-                console.log("Out of PP, fleeing battle.");
-                pbf_mash_button(context, BUTTON_B, 2000ms);
-                flee_battle(console, context);
+
+            //  Fast path: legacy default of "use slot 1 only", no cursor navigation,
+            //  no PP re-checks. Matches pre-priority-list behaviour exactly.
+            if (single_default_slot){
+                if (initial_pp_ret >= 0){
+                    console.log("Out of PP, fleeing battle.");
+                    pbf_mash_button(context, BUTTON_B, 2000ms);
+                    flee_battle(console, context);
+                    context.wait_for_all_requests();
+                    return BattleResult::outofpp;
+                }
+                console.log("Using move slot 1.");
+                pbf_press_button(context, BUTTON_A, 200ms, 300ms);
+                pbf_mash_button(context, BUTTON_A, 500ms);
                 context.wait_for_all_requests();
-                return BattleResult::outofpp;
+                times_moved++;
+                continue;
             }
-            //  PP available — move list is open, cursor on move 1. Select it.
-            pbf_press_button(context, BUTTON_A, 200ms, 300ms);
-            pbf_mash_button(context, BUTTON_A, 500ms);
+
+            //  Multi-slot path: walk the priority list, using arrow detection
+            //  to navigate the move list and re-checking PP per slot.
+            bool selected = false;
+            for (size_t i = 0; i < priority.size(); i++){
+                size_t slot = priority[i];
+                console.log("Trying move slot " + std::to_string(slot + 1) + ".");
+                if (!move_cursor_to_move_slot(console, context, static_cast<MoveSlot>(slot))){
+                    console.log("Failed to position cursor on move slot " + std::to_string(slot + 1) + "; trying next.", COLOR_RED);
+                    continue;
+                }
+                //  Let the PP/type info panel redraw before sampling the watcher.
+                pbf_wait(context, 300ms);
+                context.wait_for_all_requests();
+
+                BattleOutOfPpWatcher pp_watch_slot(COLOR_RED);
+                int pp_ret = wait_until(
+                    console, context,
+                    std::chrono::milliseconds(600),
+                    { pp_watch_slot }
+                );
+                if (pp_ret >= 0){
+                    console.log("Move slot " + std::to_string(slot + 1) + " is out of PP.");
+                    continue;
+                }
+
+                console.log("Using move slot " + std::to_string(slot + 1) + ".");
+                pbf_press_button(context, BUTTON_A, 200ms, 300ms);
+                pbf_mash_button(context, BUTTON_A, 500ms);
+                context.wait_for_all_requests();
+                times_moved++;
+                selected = true;
+                break;
+            }
+            if (selected){
+                continue;
+            }
+            console.log("All priority moves out of PP, fleeing battle.");
+            pbf_mash_button(context, BUTTON_B, 2000ms);
+            flee_battle(console, context);
             context.wait_for_all_requests();
-            times_moved++;
-            continue;
+            return BattleResult::outofpp;
+        }
         case 1:
             console.log("Player Pokemon fainted.");
             return BattleResult::playerfainted;
         case 2:
             console.log("Opponent fainted.");
             return BattleResult::opponentfainted;
-        case 3: 
+        case 3:
             console.log("Battle ended"); // the opponent probably fled
             pbf_wait(context, 2000ms);
             context.wait_for_all_requests();
@@ -499,10 +567,19 @@ void flee_battle(ConsoleHandle& console, ProControllerContext& context){
     }
 }
 
-bool exit_wild_battle(ConsoleHandle& console, ProControllerContext& context, bool stop_on_move_learn, bool prevent_evolution){
-    // For move learning, there are two dialog selection boxes in a row
-    // we need to decline the first one and accept the second one, so mashing B won't work
-    // The first one will occur after an Advance Battle Dialog
+bool exit_wild_battle(
+    ConsoleHandle& console, ProControllerContext& context,
+    bool stop_on_move_learn, bool prevent_evolution,
+    const MoveLearnDecider* decider,
+    Language language
+){
+    // For move learning, there are two dialog selection boxes in a row.
+    // Decline path: press B on the first, then A on the second (don't learn).
+    // Replace path: press A on the first, wait for the "Forget which move?"
+    //   screen, OCR the 4 current moves, ask the decider which slot to forget,
+    //   navigate (DPAD_DOWN x N), press A to confirm.
+    // Stop: return true immediately (caller halts the program).
+
     uint16_t errors = 0;
     uint16_t loops = 0;
     bool first_attempt = true;
@@ -579,13 +656,77 @@ bool exit_wild_battle(ConsoleHandle& console, ProControllerContext& context, boo
             continue;
         case 2:
             if (stop_on_move_learn){
-                console.log("Move learn detected.");
+                console.log("Move learn detected. Stopping per stop_on_move_learn.");
                 return true;
-            }else if (rejected_first_box){
+            }
+            //  Second iteration of the learn dialog (after a previous Decline):
+            //  this is the "Give up on learning Y?" prompt — press A to confirm.
+            if (rejected_first_box){
                 loops++;
-                console.log("Declined to learn new move.");
+                console.log("Declined to learn new move (second prompt).");
                 pbf_press_button(context, BUTTON_A, 200ms, 0ms);
-            }else{
+                continue;
+            }
+            //  First iteration of the learn dialog. Decide accept vs decline.
+            {
+                MoveLearnDecider::FirstAction action = MoveLearnDecider::FirstAction::Decline;
+                std::string new_move_slug;
+                if (decider != nullptr){
+                    LearnMoveDialogReader dialog_reader(COLOR_RED);
+                    VideoSnapshot snap = console.video().snapshot();
+                    new_move_slug = dialog_reader.read_new_move(console.logger(), language, snap);
+                    action = decider->decide_accept_or_decline(new_move_slug);
+                    console.log(
+                        "Move learn dialog: new move OCR='" + new_move_slug +
+                        "', decision=" + (
+                            action == MoveLearnDecider::FirstAction::Stop ? "Stop" :
+                            action == MoveLearnDecider::FirstAction::Replace ? "Replace" : "Decline"
+                        )
+                    );
+                }
+                if (action == MoveLearnDecider::FirstAction::Stop){
+                    return true;
+                }
+                if (action == MoveLearnDecider::FirstAction::Replace){
+                    //  Accept the prompt and walk the forget-move screen.
+                    pbf_press_button(context, BUTTON_A, 200ms, 0ms);
+                    context.wait_for_all_requests();
+
+                    ForgetMoveScreenWatcher forget_screen(COLOR_RED);
+                    int waited = wait_until(
+                        console, context,
+                        std::chrono::milliseconds(5000),
+                        { forget_screen }
+                    );
+                    if (waited < 0){
+                        console.log("Forget-move screen not detected after 5s; falling back to fixed wait.", COLOR_RED);
+                        pbf_wait(context, 1500ms);
+                        context.wait_for_all_requests();
+                    }
+
+                    ForgetMoveScreenReader forget_reader(COLOR_RED);
+                    VideoSnapshot forget_snap = console.video().snapshot();
+                    auto current_moves = forget_reader.read_moves(console.logger(), language, forget_snap);
+                    console.log(
+                        std::string("Forget-screen current moves: [") +
+                        current_moves[0] + "|" + current_moves[1] + "|" +
+                        current_moves[2] + "|" + current_moves[3] + "]"
+                    );
+                    int forget_slot = decider->pick_forget_slot(new_move_slug, current_moves);
+                    console.log("Forgetting slot " + std::to_string(forget_slot + 1) + ".");
+
+                    //  Cursor starts on the top move (slot 0). Step down to target.
+                    for (int i = 0; i < forget_slot; i++){
+                        pbf_press_dpad(context, DPAD_DOWN, 160ms, 320ms);
+                    }
+                    pbf_press_button(context, BUTTON_A, 200ms, 0ms);
+                    context.wait_for_all_requests();
+                    move_learned = true;
+                    //  Post-replace dialogs ("1, 2, and... poof!", "X learned Y!")
+                    //  advance with B in subsequent iterations.
+                    continue;
+                }
+                //  Decline path: press B on the first prompt.
                 pbf_press_button(context, BUTTON_B, 200ms, 0ms);
                 rejected_first_box = true;
                 move_learned = true;

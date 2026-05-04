@@ -9,6 +9,8 @@
 #ifndef PokemonAutomation_PokemonFRLG_Navigation_H
 #define PokemonAutomation_PokemonFRLG_Navigation_H
 
+#include <vector>
+#include "CommonFramework/Language.h"
 #include "CommonFramework/Tools/VideoStream.h"
 #include "NintendoSwitch/Controllers/Procon/NintendoSwitch_ProController.h"
 
@@ -25,6 +27,8 @@ enum class BattleResult{
     outofpp,
     unknown
 };
+
+class MoveLearnDecider;
 
 enum class KantoFlyLocation{
     pallettown,
@@ -56,18 +60,34 @@ uint64_t open_slot_six(ConsoleHandle& console, ProControllerContext& context);
 // For soft resets, send_out_lead as false and then soft_reset() to save time.
 bool handle_encounter(ConsoleHandle& console, ProControllerContext& context, bool send_out_lead);
 
-// Mash A to keep using the first move until a Pokemon faints (either the player's or the opponent)
-// Flees the battle if out of PP.
-// Returns a BattleResult indicating how the battle ended
-BattleResult spam_first_move(ConsoleHandle& console, ProControllerContext& context);
+// Use a move each turn until a Pokemon faints (either the player's or the opponent).
+// `move_priority` is a list of 0-based move slot indices in the order to try
+// when the highest-priority slot is out of PP. Default {0} preserves the
+// historical "always use move 1" behavior.
+// Flees the battle if every priority slot is out of PP.
+// Returns a BattleResult indicating how the battle ended.
+BattleResult spam_first_move(
+    ConsoleHandle& console, ProControllerContext& context,
+    const std::vector<size_t>& move_priority = std::vector<size_t>{0}
+);
 
 // Run from battle. Cursor must start on the FIGHT button. Assumes fleeing will always work. (Smoke Ball)
 void flee_battle(ConsoleHandle& console, ProControllerContext& context);
 
 // Exit a wild battle after winning. Checks if a Pokemon is learning a new move.
-// If stop_on_move_learn is true, this exits early when a move is being learned without declining it. Otherwise, this returns to the overworld. 
-// Returns true if a move was learned (even if it was rejected) and false otherwise.
-bool exit_wild_battle(ConsoleHandle& console, ProControllerContext& context, bool stop_on_move_learn, bool prevent_evolution);
+// If stop_on_move_learn is true, this exits early when a move is being learned
+// without declining it. Otherwise, behaviour is determined by `decider`:
+//   nullptr  - always decline new moves (preserves existing 4 moves).
+//   non-null - OCR the offered move's name, ask the decider whether to accept;
+//              if accepting, OCR the forget screen and ask the decider which
+//              slot to forget. `language` selects the OCR dictionary.
+// Returns true if a move was learned (or attempted) and false otherwise.
+bool exit_wild_battle(
+    ConsoleHandle& console, ProControllerContext& context,
+    bool stop_on_move_learn, bool prevent_evolution,
+    const MoveLearnDecider* decider = nullptr,
+    Language language = Language::English
+);
 
 // Starting from the start menu, a sub-screen of the start menu, or the overworld, navigate to the party screen
 enum class StartMenuContext {
@@ -112,7 +132,7 @@ void heal_at_pokecenter(ConsoleHandle& console, ProControllerContext& context);
 // Can be used to alternate left/right and up/down. It is important that the player is not facing
 // the same direction as the first thumbstick press.
 // returns -1 if no encounter is triggered, 0 if a non-shiny is encounter, and 1 if a shiny is encountered
-int grass_spin(ConsoleHandle& console, ProControllerContext& context, bool leftright, Seconds timeout = 60s);
+int grass_spin(ConsoleHandle& console, ProControllerContext& context, bool leftright, Seconds timeout = std::chrono::seconds(60));
 
 // Go to home to check that scaling is 100%. Then resume game.
 void home_black_border_check(ConsoleHandle& console, ProControllerContext& context);

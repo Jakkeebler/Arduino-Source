@@ -315,6 +315,11 @@ const std::map<std::string, TestFunction> TEST_MAP = {
     {"PokemonFRLG_AdvanceBattleDialogDetector", std::bind(image_bool_detector_helper, test_pokemonFRLG_AdvanceBattleDialogDetector, _1)},
     {"PokemonFRLG_BattleMenuDetector", std::bind(image_bool_detector_helper, test_pokemonFRLG_BattleMenuDetector, _1)},
     {"PokemonFRLG_PrizeSelectDetector", std::bind(image_bool_detector_helper, test_pokemonFRLG_PrizeSelectDetector, _1)},
+    {"PokemonFRLG_PartySummaryReader_Dex", std::bind(image_int_detector_helper, test_pokemonFRLG_PartySummaryReader_dex, _1)},
+    {"PokemonFRLG_PartySummaryReader_Moves", std::bind(image_words_detector_helper, test_pokemonFRLG_PartySummaryReader_moves, _1)},
+    {"PokemonFRLG_LearnMoveDialogReader", std::bind(image_words_detector_helper, test_pokemonFRLG_LearnMoveDialogReader, _1)},
+    {"PokemonFRLG_ForgetMoveScreenDetector", std::bind(image_bool_detector_helper, test_pokemonFRLG_ForgetMoveScreenDetector, _1)},
+    {"PokemonFRLG_ForgetMoveScreenReader", std::bind(image_words_detector_helper, test_pokemonFRLG_ForgetMoveScreenReader, _1)},
 };
 
 TestFunction find_test_function(const std::string& test_space, const std::string& test_name){

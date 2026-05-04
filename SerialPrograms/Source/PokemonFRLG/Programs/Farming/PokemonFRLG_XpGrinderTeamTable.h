@@ -1,0 +1,84 @@
+/*  Pokemon FRLG XP Grinder Team Table
+ *
+ *  From: https://github.com/PokemonAutomation/
+ *
+ *  Per-Pokemon configuration table for the XP Grinder. One row per party
+ *  slot, in lead order:
+ *
+ *      | Species | Desired Move 1..4 | On Unknown Offered |
+ *
+ *  Species is auto-populated from the party scanner but user-overridable
+ *  (e.g. for nicknamed mons whose dex# couldn't be read). Desired moves are
+ *  the user's intended final 4-move set, ordered by priority. On Unknown
+ *  controls behaviour when a level-up offers a move whose name OCR fails.
+ *
+ */
+
+#ifndef PokemonAutomation_PokemonFRLG_XpGrinderTeamTable_H
+#define PokemonAutomation_PokemonFRLG_XpGrinderTeamTable_H
+
+#include <array>
+#include <string>
+#include <vector>
+#include "Common/Cpp/Options/EditableTableOption.h"
+#include "Common/Cpp/Options/EnumDropdownOption.h"
+#include "CommonTools/Options/StringSelectOption.h"
+#include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h"
+
+namespace PokemonAutomation{
+namespace NintendoSwitch{
+namespace PokemonFRLG{
+
+
+const EnumDropdownDatabase<OnUnknownOffered>& OnUnknownOffered_Database();
+
+
+class XpGrinderTeamRow : public EditableTableRow{
+public:
+    XpGrinderTeamRow(EditableTableOption& parent_table);
+    virtual std::unique_ptr<EditableTableRow> clone() const override;
+
+public:
+    StringSelectCell species;             //  slug; "" = unknown / not yet scanned
+    StringSelectCell desired_move[4];     //  slug; "" = no preference for this slot
+    EnumDropdownCell<OnUnknownOffered> on_unknown;
+};
+
+
+class XpGrinderTeamTable : public EditableTableOption_t<XpGrinderTeamRow>{
+public:
+    XpGrinderTeamTable();
+
+    //  Number of rows currently configured.
+    size_t row_count() const{ return current_rows(); }
+
+    //  Read-only snapshots of one row's contents. Returns empty values
+    //  (empty slugs / Decline) if `pokemon` is out of range.
+    std::string                species_for(size_t pokemon) const;
+    std::array<std::string, 4> desired_for(size_t pokemon) const;
+    OnUnknownOffered           on_unknown_for(size_t pokemon) const;
+
+    //  Auto-update a row's species cell. Used by the party scanner after
+    //  detecting a new dex# (initial scan or post-evolution rescan). Returns
+    //  true if the slug was applied, false if pokemon index is out of range
+    //  or the slug isn't in the species dropdown database.
+    bool set_species(size_t pokemon, const std::string& slug);
+
+    //  Build a MoveLearnDecider from a row's snapshot. Caller owns the result.
+    MoveLearnDecider make_decider(size_t pokemon) const;
+
+    //  Validate desired moves against the row's species evolution-chain
+    //  learnset. Returns a list of human-readable warnings (one per invalid
+    //  move). Empty list means everything is valid. Run at program start.
+    std::vector<std::string> validate_against_learnsets() const;
+
+private:
+    virtual std::vector<std::string> make_header() const override;
+    std::vector<std::unique_ptr<EditableTableRow>> make_defaults();
+};
+
+
+}
+}
+}
+#endif

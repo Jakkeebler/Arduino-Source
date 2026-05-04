@@ -11,8 +11,10 @@
 #include "Common/Cpp/Options/BooleanCheckBoxOption.h"
 #include "Common/Cpp/Options/EnumDropdownOption.h"
 #include "CommonFramework/Notifications/EventNotificationsTable.h"
+#include "CommonTools/Options/LanguageOCROption.h"
 #include "NintendoSwitch/NintendoSwitch_SingleSwitchProgram.h"
 #include "NintendoSwitch/Options/NintendoSwitch_GoHomeWhenDoneOption.h"
+#include "PokemonFRLG_XpGrinderTeamTable.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -51,11 +53,13 @@ private:
     SimpleIntegerOption<uint64_t> MAX_BATTLES;
 
     BooleanCheckBoxOption PREVENT_EVOLUTION;
-    BooleanCheckBoxOption STOP_ON_MOVE_LEARN;
     BooleanCheckBoxOption IGNORE_SHINIES;
 
     EnumDropdownOption<RotationMode> ROTATION_MODE;
     SimpleIntegerOption<uint64_t> PARTY_SIZE;
+    OCR::LanguageOCROption LANGUAGE;
+    BooleanCheckBoxOption AUTO_SCAN_ON_START;
+    XpGrinderTeamTable TEAM_TABLE;
 
     BooleanCheckBoxOption HEAL_ON_FAINT;
     BooleanCheckBoxOption HEAL_ON_OUT_OF_PP;
