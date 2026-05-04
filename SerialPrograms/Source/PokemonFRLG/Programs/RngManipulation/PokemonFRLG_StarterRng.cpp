@@ -143,7 +143,7 @@ StarterRng::StarterRng()
     , SEED_DELAY(
         "<b>Seed Delay Time (ms):</b><br>The delay between starting the game and advancing past the title screen. Set this to match your target seed.",
         LockMode::LOCK_WHILE_RUNNING,
-        31338, 30470 // default, min
+        31338, 30400 // default, min
     )
     , ADVANCES(
         "<b>Advances:</b><br>The total number of RNG advances for your target.<br>This should be the combined amount of continue screen and in-game advances.",
@@ -265,6 +265,7 @@ AdvObservedPokemon StarterRng::read_summary(SingleSwitchProgramEnvironment& env,
     }
 
     AdvObservedPokemon pokemon = {
+        stats.name,
         gender,
         string_to_nature(stats.nature),
         AdvAbility::Any,
@@ -636,13 +637,13 @@ void StarterRng::program(SingleSwitchProgramEnvironment& env, ProControllerConte
 
     if (SEED_POSITION == -1){
         OperationFailedException::fire(
-            ErrorReport::SEND_ERROR_REPORT,
+            ErrorReport::NO_ERROR_REPORT,
             "StarterRng(): Target Seed is missing from the list of nearby seeds.",
             env.console
         ); 
     }
 
-    env.log("Target Seed Value: " + std::to_string(TARGET_SEED));
+    env.log("Target Seed Value (base10): " + std::to_string(TARGET_SEED));
 
     BaseStats BASE_STATS;
     switch (STARTER){
@@ -743,15 +744,12 @@ void StarterRng::program(SingleSwitchProgramEnvironment& env, ProControllerConte
                     CONTINUE_SCREEN_ADJUSTMENT = prev_csf_calibration + 0.5;
                 }
                 CONTINUE_SCREEN_ADJUSTMENT = fmod(CONTINUE_SCREEN_ADJUSTMENT, 2);
-            }else{
-                // we're still not that close. Slightly vary the seed to more reliably hone in on advances
-                double seed_bump = SEED_BUMPS[ADVANCE_HISTORY.results.size() % 5];
-                SEED_CALIBRATION_FRAMES += seed_bump;
             }
-        }else{
-            double seed_bump = SEED_BUMPS[ADVANCE_HISTORY.results.size() % 5];
-            SEED_CALIBRATION_FRAMES += seed_bump;
         }
+
+        // if previous resets had uncertain advances, slightly modify the seed delay to try to hit a different target
+        double seed_bump = SEED_BUMPS[ADVANCE_HISTORY.results.size() % 5];
+        SEED_CALIBRATION_FRAMES += seed_bump;
 
         double CALIBRATED_ADVANCES = ADVANCES + ADVANCES_CALIBRATION;
         double INGAME_ADVANCES = CALIBRATED_ADVANCES - CONTINUE_SCREEN_FRAMES - CONTINUE_SCREEN_ADJUSTMENT;
@@ -804,7 +802,7 @@ void StarterRng::program(SingleSwitchProgramEnvironment& env, ProControllerConte
         AdvRngFilters filters = observation_to_filters(pokemon, BASE_STATS);
         RNG_FILTERS.set(filters);
 
-        std::map<AdvRngState, AdvPokemonResult> search_hits = get_search_results(env.console, searcher, filters, SEED_VALUES, ADVANCES, advances_radius, GENDER_THRESHOLD);
+        std::vector<AdvRngState> search_hits = get_search_results(env.console, searcher, filters, SEED_VALUES, ADVANCES, advances_radius, GENDER_THRESHOLD);
         RNG_CALIBRATION.set(
             SEED_CALIBRATION_FRAMES * FRAME_DURATION,
             CONTINUE_SCREEN_ADJUSTMENT,

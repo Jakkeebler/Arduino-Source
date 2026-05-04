@@ -156,7 +156,7 @@ GiftRng::GiftRng()
     , SEED_DELAY(
         "<b>Seed Delay Time (ms):</b><br>The delay between starting the game and advancing past the title screen. Set this to match your target seed.",
         LockMode::LOCK_WHILE_RUNNING,
-        31338, 30470 // default, min
+        31338, 30400 // default, min
     )
     , ADVANCES(
         "<b>Advances:</b><br>The total number of RNG advances for your target.<br>This should be the combined amount of continue screen and in-game advances.",
@@ -282,6 +282,7 @@ AdvObservedPokemon GiftRng::read_summary(SingleSwitchProgramEnvironment& env, Pr
     }
 
     AdvObservedPokemon pokemon = {
+        stats.name,
         gender,
         string_to_nature(stats.nature),
         AdvAbility::Any,
@@ -297,6 +298,7 @@ AdvObservedPokemon GiftRng::read_summary(SingleSwitchProgramEnvironment& env, Pr
 bool GiftRng::use_rare_candy(
     SingleSwitchProgramEnvironment& env, 
     ProControllerContext& context,
+    GiftRng_Descriptor::Stats& stats,
     AdvObservedPokemon& pokemon,
     AdvRngFilters& filters,
     const BaseStats& BASE_STATS,
@@ -306,6 +308,7 @@ bool GiftRng::use_rare_candy(
     if (first){
         open_bag_from_overworld(env.console, context);
         // move left to the correct pocket (in case Teachy TV was used)
+        pbf_move_left_joystick(context, {-1, 0}, 200ms, 800ms);
         pbf_move_left_joystick(context, {-1, 0}, 200ms, 800ms);
         pbf_move_left_joystick(context, {-1, 0}, 200ms, 800ms);
     }
@@ -327,6 +330,7 @@ bool GiftRng::use_rare_candy(
             env, NOTIFICATION_ERROR_RECOVERABLE,
             "use_rare_candy(): failed to detect party menu."
         ); 
+        stats.errors++;
         return true;
     }
 
@@ -355,6 +359,7 @@ bool GiftRng::use_rare_candy(
             env, NOTIFICATION_ERROR_RECOVERABLE,
             "use_rare_candy(): failed to detect level-up stats."
         ); 
+        stats.errors++;
         return true;
     }
 
@@ -364,12 +369,12 @@ bool GiftRng::use_rare_candy(
 
     env.log("Reading stats...");
     VideoSnapshot screen = env.console.video().snapshot();
-    StatReads stats = reader.read_stats(env.logger(), screen);    
+    StatReads statreads = reader.read_stats(env.logger(), screen);    
 
-    update_filters(filters, pokemon, stats, {}, BASE_STATS);
+    update_filters(filters, pokemon, statreads, {}, BASE_STATS);
     RNG_FILTERS.set(filters);   
 
-    // return to the bag (possibly learning a move, but trying to preven evolution)
+    // return to the bag (possibly learning a move, but trying to prevent evolution)
     int attempts = 0;
     while (true){
         if (attempts > 5){
@@ -377,6 +382,7 @@ bool GiftRng::use_rare_candy(
                 env, NOTIFICATION_ERROR_RECOVERABLE,
                 "use_rare_candy(): failed to return to bag menu in 5 attempts."
             );
+            stats.errors++;
             return true;
         }
         BagWatcher bag_menu(COLOR_RED);
@@ -407,6 +413,7 @@ bool GiftRng::use_rare_candy(
                 env, NOTIFICATION_ERROR_RECOVERABLE,
                 "use_rare_candy(): failed to return to bag menu."
             ); 
+            stats.errors++;
             return true;
         }
     }
@@ -431,13 +438,13 @@ void GiftRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
 
     if (SEED_POSITION == -1){
         OperationFailedException::fire(
-            ErrorReport::SEND_ERROR_REPORT,
+            ErrorReport::NO_ERROR_REPORT,
             "GiftRng(): Target Seed is missing from the list of nearby seeds.",
             env.console
         ); 
     }
 
-    env.log("Target Seed Value: " + std::to_string(TARGET_SEED));
+    env.log("Target Seed Value (base10): " + std::to_string(TARGET_SEED));
 
     BaseStats BASE_STATS;
     int16_t GENDER_THRESHOLD = -1;
@@ -533,7 +540,6 @@ void GiftRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
     RngCalibrationHistory CALIBRATION_HISTORY; 
     uint64_t INITIAL_ADVANCES_RADIUS = USE_TEACHY_TV ? 8192 : 1024;
     uint64_t resets = 0;
-    bool wildshiny_found = false;
 
     while (true){
         if (CALIBRATION_HISTORY.results.size() > 0){
@@ -548,10 +554,6 @@ void GiftRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
 
         if (resets > MAX_RESETS){
             env.log("Max resets reached.");
-            break;
-        }
-
-        if (wildshiny_found){
             break;
         }
 
@@ -588,15 +590,12 @@ void GiftRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
                     CONTINUE_SCREEN_ADJUSTMENT = prev_csf_calibration + 0.5;
                 }
                 CONTINUE_SCREEN_ADJUSTMENT = fmod(CONTINUE_SCREEN_ADJUSTMENT, 2);
-            }else{
-                // we're still not that close. Slightly vary the seed to more reliably hone in on advances
-                double seed_bump = SEED_BUMPS[ADVANCE_HISTORY.results.size() % 5];
-                SEED_CALIBRATION_FRAMES += seed_bump;
             }
-        }else{
-            double seed_bump = SEED_BUMPS[ADVANCE_HISTORY.results.size() % 5];
-            SEED_CALIBRATION_FRAMES += seed_bump;
         }
+
+        // if previous resets had uncertain advances, slightly modify the seed delay to try to hit a different target
+        double seed_bump = SEED_BUMPS[ADVANCE_HISTORY.results.size() % 5];
+        SEED_CALIBRATION_FRAMES += seed_bump;
 
         double CALIBRATED_ADVANCES = ADVANCES + ADVANCES_CALIBRATION;
         double INGAME_ADVANCES = CALIBRATED_ADVANCES - CONTINUE_SCREEN_FRAMES - CONTINUE_SCREEN_ADJUSTMENT;
@@ -661,7 +660,7 @@ void GiftRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
         AdvRngFilters filters = observation_to_filters(pokemon, BASE_STATS);
         RNG_FILTERS.set(filters);
 
-        std::map<AdvRngState, AdvPokemonResult> search_hits = get_search_results(env.console, searcher, filters, SEED_VALUES, ADVANCES, advances_radius, GENDER_THRESHOLD);
+        std::vector<AdvRngState> search_hits = get_search_results(env.console, searcher, filters, SEED_VALUES, ADVANCES, advances_radius, GENDER_THRESHOLD);
         RNG_CALIBRATION.set(
             SEED_CALIBRATION_FRAMES * FRAME_DURATION,
             CONTINUE_SCREEN_ADJUSTMENT,
@@ -675,10 +674,7 @@ void GiftRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
         }
 
         for (uint64_t i=0; i<MAX_RARE_CANDIES; i++){
-            bool failed = use_rare_candy(env, context, pokemon, filters, BASE_STATS, i == 0);
-            if (failed){
-                stats.errors++;
-            }
+            bool failed = use_rare_candy(env, context, stats, pokemon, filters, BASE_STATS, i == 0);
 
             search_hits = get_search_results(env.console, searcher, filters, SEED_VALUES, ADVANCES, advances_radius, GENDER_THRESHOLD);
             RNG_CALIBRATION.set(

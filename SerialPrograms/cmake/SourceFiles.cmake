@@ -1572,6 +1572,12 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_HardReset.h
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_RngCalibration.cpp
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_RngCalibration.h
+    Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_RngStatsDatabase.cpp
+    Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_RngStatsDatabase.h
+    Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_LocationsDatabase.cpp
+    Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_LocationsDatabase.h
+    Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_EncountersDatabase.cpp
+    Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_EncountersDatabase.h
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_SidHelper.cpp
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_SidHelper.h
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_RngHelper.cpp
@@ -1582,6 +1588,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_GiftRng.h
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_StaticRng.cpp
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_StaticRng.h
+    Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_WildRng.cpp
+    Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_WildRng.h
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_KantoMapPositionTest.cpp
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_KantoMapPositionTest.h
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_MappingMode.cpp

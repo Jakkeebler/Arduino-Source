@@ -1,11 +1,11 @@
-/*  Static RNG
+/*  Wild RNG
  *
  *  From: https://github.com/PokemonAutomation/
  *
  */
 
-#ifndef PokemonAutomation_PokemonFRLG_StaticRng_H
-#define PokemonAutomation_PokemonFRLG_StaticRng_H
+#ifndef PokemonAutomation_PokemonFRLG_WildRng_H
+#define PokemonAutomation_PokemonFRLG_WildRng_H
 
 #include "Common/Cpp/Options/SimpleIntegerOption.h"
 #include "Common/Cpp/Options/FloatingPointOption.h"
@@ -13,6 +13,7 @@
 #include "Common/Cpp/Options/TextEditOption.h"
 #include "CommonFramework/Notifications/EventNotificationsTable.h"
 #include "CommonTools/Options/LanguageOCROption.h"
+#include "CommonTools/Options/StringSelectOption.h"
 #include "NintendoSwitch/NintendoSwitch_SingleSwitchProgram.h"
 #include "NintendoSwitch/Options/NintendoSwitch_GoHomeWhenDoneOption.h"
 #include "Pokemon/Pokemon_StatsCalculation.h"
@@ -25,16 +26,16 @@ namespace PokemonAutomation{
 namespace NintendoSwitch{
 namespace PokemonFRLG{
 
-class StaticRng_Descriptor : public SingleSwitchProgramDescriptor{
+class WildRng_Descriptor : public SingleSwitchProgramDescriptor{
 public:
-    StaticRng_Descriptor();
+    WildRng_Descriptor();
     struct Stats;
     virtual std::unique_ptr<StatsTracker> make_stats() const override;
 };
 
-class StaticRng : public SingleSwitchProgramInstance{
+class WildRng : public SingleSwitchProgramInstance{
 public:
-    StaticRng();
+    WildRng();
     virtual void program(SingleSwitchProgramEnvironment& env, ProControllerContext &context) override;
     virtual void start_program_border_check(
         VideoStream& stream,
@@ -43,21 +44,35 @@ public:
 
 private:
 
+    enum class GameVersion{
+        firered,
+        leafgreen
+    };
+
+    enum class EncounterType{
+        grass,
+        rocksmash,
+        surfing,
+        oldrod,
+        goodrod,
+        superrod
+    };
+
     bool have_hit_target(SingleSwitchProgramEnvironment& env, const uint32_t& TARGET_SEED, const AdvRngState& hit);
 
-    AdvObservedPokemon read_summary(SingleSwitchProgramEnvironment& env, ProControllerContext& context);
+    AdvObservedPokemon read_summary(SingleSwitchProgramEnvironment& env, ProControllerContext& context, const std::set<std::string>& SPECIES_LIST);
 
     bool auto_catch(
         SingleSwitchProgramEnvironment& env, 
         ProControllerContext& context, 
-        StaticRng_Descriptor::Stats& stats,
+        WildRng_Descriptor::Stats& stats,
         const uint64_t& MAX_BALL_THROWS
     );
 
     bool use_rare_candy(
         SingleSwitchProgramEnvironment& env, 
         ProControllerContext& context,
-        StaticRng_Descriptor::Stats& stats,
+        WildRng_Descriptor::Stats& stats,
         AdvObservedPokemon& pokemon,
         AdvRngFilters& filters,
         const BaseStats& BASE_STATS,
@@ -66,7 +81,11 @@ private:
     
     OCR::LanguageOCROption LANGUAGE;
 
-    EnumDropdownOption<PokemonFRLG_RngTarget> TARGET;
+    EnumDropdownOption<GameVersion> GAME_VERSION;
+    EnumDropdownOption<EncounterType> ENCOUNTER_TYPE;
+
+    StringSelectDatabase LOCATIONS_DATABASE;
+    StringSelectOption GAME_LOCATION;
 
     SimpleIntegerOption<uint64_t> MAX_RESETS;
     SimpleIntegerOption<uint64_t> MAX_RARE_CANDIES;

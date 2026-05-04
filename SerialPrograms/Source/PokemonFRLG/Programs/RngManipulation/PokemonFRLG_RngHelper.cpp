@@ -75,6 +75,7 @@ RngHelper::RngHelper()
             {PokemonFRLG_RngTarget::hooh, "hooh", "Ho-oh"},
             {PokemonFRLG_RngTarget::hypno, "berryforesthypno", "Berry Forest Hypno"},
             {PokemonFRLG_RngTarget::sweetscent, "sweetscent", "Sweet Scent"},
+            {PokemonFRLG_RngTarget::rocksmash, "rocksmash", "Rock Smash"},
             {PokemonFRLG_RngTarget::fishing, "fishing", "Fishing"},
             {PokemonFRLG_RngTarget::safarizonecenter, "safarizonecenter", "Safari Zone Center (Sweet Scent)"},
             {PokemonFRLG_RngTarget::safarizoneeast, "safarizoneeast", "Safari Zone East (Sweet Scent)"},
@@ -119,7 +120,7 @@ RngHelper::RngHelper()
         "<b>Seed Delay Time (ms):</b><br>"
         "The delay between starting the game and advancing past the title screen. Set this to match your target seed.",
         LockMode::LOCK_WHILE_RUNNING,
-        35000, 30470 // default, min
+        35000, 30400 // default, min
     )
     , SEED_CALIBRATION(
          "<b>Seed Calibration (ms):</b>"
@@ -220,7 +221,7 @@ void RngHelper::program(SingleSwitchProgramEnvironment& env, ProControllerContex
     double FRAMERATE = 59.999977; // FPS
     double FRAME_DURATION = 1000 / FRAMERATE;
 
-    int64_t FIXED_SEED_OFFSET = -845; // milliseconds. approximate
+    const int64_t FIXED_SEED_OFFSET = -845; // milliseconds. approximate
 
     while (!shiny_found){
         // prepare timings
@@ -229,7 +230,7 @@ void RngHelper::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         double MODIFIED_INGAME_ADVANCES = INGAME_ADVANCES + INGAME_CALIBRATION;
         if (MODIFIED_INGAME_ADVANCES < 0) {
            OperationFailedException::fire(
-                ErrorReport::SEND_ERROR_REPORT,
+                ErrorReport::NO_ERROR_REPORT,
                 "In-game advances cannot be negative. Check your in-game advances and calibration.",
                 env.console
             ); 
@@ -257,7 +258,7 @@ void RngHelper::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         env.log("Continue Screen delay: " + std::to_string(CONTINUE_SCREEN_DELAY) + "ms");
         env.log("In-game delay: " + std::to_string(INGAME_DELAY) + "ms");
         env.log("Teachy TV delay: " + std::to_string(TEACHY_DELAY) + "ms");
-        env.log("Total time: " + std::to_string(SEED_DELAY + SEED_CALIBRATION + FIXED_SEED_OFFSET + CONTINUE_SCREEN_DELAY + INGAME_DELAY + TEACHY_DELAY) + "ms");
+        env.log("Total time: " + std::to_string(TOTAL_SEED_DELAY + CONTINUE_SCREEN_DELAY + INGAME_DELAY + TEACHY_DELAY) + "ms");
 
         check_timings(env.console, TARGET, TOTAL_SEED_DELAY, CONTINUE_SCREEN_DELAY, INGAME_DELAY, SAFARI_ZONE);
 

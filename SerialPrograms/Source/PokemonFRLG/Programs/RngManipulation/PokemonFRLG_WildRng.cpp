@@ -1,4 +1,4 @@
-/*  Static RNG
+/*  Wild RNG
  *
  *  From: https://github.com/PokemonAutomation/
  *
@@ -33,26 +33,29 @@
 #include "PokemonFRLG_BlindNavigation.h"
 #include "PokemonFRLG_RngNavigation.h"
 #include "PokemonFRLG_HardReset.h"
-#include "PokemonFRLG_StaticRng.h"
+#include "PokemonFRLG_LocationsDatabase.h"
+#include "PokemonFRLG_RngStatsDatabase.h"
+#include "PokemonFRLG_EncountersDatabase.h"
+#include "PokemonFRLG_WildRng.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
 namespace PokemonFRLG{
 
 
-StaticRng_Descriptor::StaticRng_Descriptor()
+WildRng_Descriptor::WildRng_Descriptor()
     : SingleSwitchProgramDescriptor(
-        "PokemonFRLG:StaticRng",
-        Pokemon::STRING_POKEMON + " FRLG", "Static RNG",
-        "Programs/PokemonFRLG/StaticRng.html",
-        "Automatically calibrate timings to hit a specific RNG target for FRLG static encounters.",
+        "PokemonFRLG:WildRng",
+        Pokemon::STRING_POKEMON + " FRLG", "Wild RNG",
+        "Programs/PokemonFRLG/WildRng.html",
+        "Automatically calibrate timings to hit a specific RNG target for FRLG random wild encounters.",
         ProgramControllerClass::StandardController_RequiresPrecision,
         FeedbackType::REQUIRED,
         AllowCommandsWhenRunning::DISABLE_COMMANDS
     )
 {}
 
-struct StaticRng_Descriptor::Stats : public StatsTracker{
+struct WildRng_Descriptor::Stats : public StatsTracker{
     Stats()
         : resets(m_stats["Resets"])
         , shinies(m_stats["Shinies"])
@@ -69,11 +72,11 @@ struct StaticRng_Descriptor::Stats : public StatsTracker{
     std::atomic<uint64_t>& nonshiny;
     std::atomic<uint64_t>& errors;
 };
-std::unique_ptr<StatsTracker> StaticRng_Descriptor::make_stats() const{
+std::unique_ptr<StatsTracker> WildRng_Descriptor::make_stats() const{
     return std::unique_ptr<StatsTracker>(new Stats());
 }
 
-StaticRng::StaticRng()
+WildRng::WildRng()
     : LANGUAGE(
         "<b>Game Language:</b>",
         {
@@ -87,23 +90,34 @@ StaticRng::StaticRng()
         LockMode::LOCK_WHILE_RUNNING,
         true
     )
-    , TARGET(
-        "<b>Target:</b><br>",
+    , GAME_VERSION(
+        "<b>Game Version:</b>",
         {
-            {PokemonFRLG_RngTarget::electrode, "electrode", "Electrode"},
-            {PokemonFRLG_RngTarget::snorlax, "snorlax", "Snorlax"},
-            {PokemonFRLG_RngTarget::articuno, "articuno", "Articuno"},
-            {PokemonFRLG_RngTarget::zapdos, "zapdos", "Zapdos"},
-            {PokemonFRLG_RngTarget::moltres, "moltres", "Moltres"},
-            {PokemonFRLG_RngTarget::mewtwo, "mewtwo", "Mewtwo"},
-            {PokemonFRLG_RngTarget::hypno, "hypno", "Hypno"},
-            {PokemonFRLG_RngTarget::hooh, "hooh", "Ho-oh"},
-            {PokemonFRLG_RngTarget::lugia, "lugia", "Lugia"},
-            {PokemonFRLG_RngTarget::deoxys_attack, "deoxys_attack", "Deoxys-Attack"},
-            {PokemonFRLG_RngTarget::deoxys_defense, "deoxys_defense", "Deoxys-Defense"}
+            {GameVersion::firered, "firered", "FireRed"},
+            {GameVersion::leafgreen, "leafgreen", "LeafGreen"}
         },
         LockMode::LOCK_WHILE_RUNNING,
-        PokemonFRLG_RngTarget::electrode
+        GameVersion::firered
+    )
+    , ENCOUNTER_TYPE(
+        "<b>Encounter Type:</b>",
+        {
+            {EncounterType::grass, "grass", "Grass"},
+            {EncounterType::rocksmash, "rocksmash", "Rock Smash"},
+            {EncounterType::surfing, "surfing", "Surfing"},
+            {EncounterType::oldrod, "oldrod", "Old Rod"},
+            {EncounterType::goodrod, "goodrod", "Good Rod"},
+            {EncounterType::superrod, "superrod", "Super Rod"},
+        },
+        LockMode::LOCK_WHILE_RUNNING,
+        EncounterType::grass
+    )
+    , LOCATIONS_DATABASE(make_locations_database("PokemonFRLG/Locations.json"))
+    , GAME_LOCATION(
+        "<b>Location:</b>",
+        LOCATIONS_DATABASE,
+        LockMode::LOCK_WHILE_RUNNING,
+        "route_1"
     )    
     , MAX_RESETS(
         "<b>Max Resets:</b><br>",
@@ -210,7 +224,9 @@ StaticRng::StaticRng()
     PA_ADD_OPTION(RNG_FILTERS);
     PA_ADD_OPTION(RNG_CALIBRATION);
     PA_ADD_OPTION(LANGUAGE);
-    PA_ADD_OPTION(TARGET);
+    PA_ADD_OPTION(GAME_VERSION);
+    PA_ADD_OPTION(ENCOUNTER_TYPE);
+    PA_ADD_OPTION(GAME_LOCATION);
     PA_ADD_OPTION(MAX_RESETS);
     PA_ADD_OPTION(MAX_BALL_THROWS);
     PA_ADD_OPTION(MAX_RARE_CANDIES);
@@ -230,11 +246,11 @@ StaticRng::StaticRng()
 
 
 
-bool StaticRng::have_hit_target(SingleSwitchProgramEnvironment& env, const uint32_t& TARGET_SEED, const AdvRngState& hit){
+bool WildRng::have_hit_target(SingleSwitchProgramEnvironment& env, const uint32_t& TARGET_SEED, const AdvRngState& hit){
     return (hit.seed == TARGET_SEED) && (hit.advance == ADVANCES);
 }
 
-bool StaticRng::auto_catch(SingleSwitchProgramEnvironment& env, ProControllerContext& context, StaticRng_Descriptor::Stats& stats, const uint64_t& MAX_BALL_THROWS){
+bool WildRng::auto_catch(SingleSwitchProgramEnvironment& env, ProControllerContext& context, WildRng_Descriptor::Stats& stats, const uint64_t& MAX_BALL_THROWS){
     for (uint64_t i=0; i<=MAX_BALL_THROWS; i++){
         int count = 0;
         while(true){
@@ -354,7 +370,7 @@ bool StaticRng::auto_catch(SingleSwitchProgramEnvironment& env, ProControllerCon
     return true;
 }
 
-AdvObservedPokemon StaticRng::read_summary(SingleSwitchProgramEnvironment& env, ProControllerContext& context){
+AdvObservedPokemon WildRng::read_summary(SingleSwitchProgramEnvironment& env, ProControllerContext& context, const std::set<std::string>& SPECIES_LIST){
     // navigate to the summary page of the last occupied (not necessarily 6th) party slot
     open_party_menu_from_overworld(env.console, context);
     pbf_move_left_joystick(context, {0, +1}, 200ms, 300ms);
@@ -387,7 +403,7 @@ AdvObservedPokemon StaticRng::read_summary(SingleSwitchProgramEnvironment& env, 
 
     env.log("Reading Page 1 (Name, Level, Nature, Gender)...");
     VideoSnapshot screen1 = env.console.video().snapshot();
-    reader.read_page1(env.logger(), LANGUAGE, screen1, stats);
+    reader.read_page1(env.logger(), LANGUAGE, screen1, stats, SPECIES_LIST);
 
     SummaryPage2Watcher page_two(COLOR_RED);
     context.wait_for_all_requests();
@@ -449,10 +465,10 @@ AdvObservedPokemon StaticRng::read_summary(SingleSwitchProgramEnvironment& env, 
     return pokemon;
 }
 
-bool StaticRng::use_rare_candy(
+bool WildRng::use_rare_candy(
     SingleSwitchProgramEnvironment& env, 
     ProControllerContext& context,
-    StaticRng_Descriptor::Stats& stats,
+    WildRng_Descriptor::Stats& stats,
     AdvObservedPokemon& pokemon,
     AdvRngFilters& filters,
     const BaseStats& BASE_STATS,
@@ -574,17 +590,58 @@ bool StaticRng::use_rare_candy(
 }
 
 
-void StaticRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext& context){
+void WildRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext& context){
     /*
     * Settings: Text Speed fast
     */
 
-    StaticRng_Descriptor::Stats& stats = env.current_stats<StaticRng_Descriptor::Stats>();
+    WildRng_Descriptor::Stats& stats = env.current_stats<WildRng_Descriptor::Stats>();
 
     home_black_border_check(env.console, context);
 
     RNG_FILTERS.reset();
     RNG_CALIBRATION.reset();
+
+    // prepare database of base stats and gender thresholds
+    RngStatsDatabase stats_data("PokemonFRLG/BaseStats.json");
+
+    // get the relevant encounter slots
+    EncountersDatabase encounters_data(GAME_VERSION == GameVersion::firered ? "PokemonFRLG/EncounterSlotsFR.json" : "PokemonFRLG/EncounterSlotsLG.json");
+
+    EncounterType enc = ENCOUNTER_TYPE;
+    int enc_idx = static_cast <int> (enc);
+    auto enc_entry = ENCOUNTER_TYPE.database().find(enc_idx);
+    std::string enc_slug = enc_entry->slug;
+
+
+    std::string loc_slug = GAME_LOCATION.slug();
+
+    std::map<std::string, std::vector<AdvEncounterSlot>> location_map = encounters_data.get_throw(enc_slug);
+    if (location_map.find(loc_slug)==location_map.end()){
+        OperationFailedException::fire(
+            ErrorReport::NO_ERROR_REPORT,
+            "Invalid combination for encounter type and location.",
+            env.console
+        ); 
+    }
+
+    std::vector<AdvEncounterSlot> ENCOUNTER_SLOTS = location_map.find(loc_slug)->second;
+    env.log("Encounter slots");
+    for (size_t i=0; i<ENCOUNTER_SLOTS.size(); i++){
+        AdvEncounterSlot& slot = ENCOUNTER_SLOTS[i];
+        env.log("   Slot " + std::to_string(i) + ": " + slot.species + " " + std::to_string(slot.minlevel) + "-" + std::to_string(slot.maxlevel));
+    }    
+
+    std::set<std::string> SPECIES_LIST;
+    for (auto slot : ENCOUNTER_SLOTS){
+        SPECIES_LIST.emplace(slot.species);
+    }
+
+    const bool SUPER_ROD = ENCOUNTER_TYPE == EncounterType::superrod;
+
+
+
+    // prepare timings
 
     const uint16_t TARGET_SEED = parse_seed(env.console, SEED);
     const std::vector<uint16_t> SEED_VALUES = parse_seed_list(env.console, SEED_LIST);
@@ -592,63 +649,53 @@ void StaticRng::program(SingleSwitchProgramEnvironment& env, ProControllerContex
 
     if (SEED_POSITION == -1){
         OperationFailedException::fire(
-            ErrorReport::NO_ERROR_REPORT,
-            "StaticRng(): Target Seed is missing from the list of nearby seeds.",
+            ErrorReport::SEND_ERROR_REPORT,
+            "WildRng(): Target Seed is missing from the list of nearby seeds.",
             env.console
         ); 
     }
 
     env.log("Target Seed Value (base10): " + std::to_string(TARGET_SEED));
 
-    BaseStats BASE_STATS;
-    int16_t GENDER_THRESHOLD = -1;
-    switch (TARGET){
-    case PokemonFRLG_RngTarget::electrode:
-        BASE_STATS = { 60, 50, 70, 80, 80, 140 };
-        GENDER_THRESHOLD = -1;
-        break;
-    case PokemonFRLG_RngTarget::snorlax:
-        BASE_STATS = { 160, 110, 65, 65, 110, 30 };
-        GENDER_THRESHOLD = 30;
-        break;
-    case PokemonFRLG_RngTarget::articuno:
-        BASE_STATS = { 90, 85, 100, 95, 125, 85 };
-        GENDER_THRESHOLD = -1;
-        break;
-    case PokemonFRLG_RngTarget::zapdos:
-        BASE_STATS = { 90, 90, 85, 125, 90, 100 };
-        GENDER_THRESHOLD = -1;
-        break;
-    case PokemonFRLG_RngTarget::moltres:
-        BASE_STATS = { 90, 100, 90, 125, 85, 90 };
-        GENDER_THRESHOLD = -1;
-        break;
-    case PokemonFRLG_RngTarget::mewtwo:
-        BASE_STATS = { 106, 110, 90, 154, 90, 130 };
-        GENDER_THRESHOLD = -1;
-        break;
-    case PokemonFRLG_RngTarget::hypno:
-        BASE_STATS = { 85, 73, 70, 73, 115, 67 };
-        GENDER_THRESHOLD = 126;
-        break;
-    case PokemonFRLG_RngTarget::hooh:
-        BASE_STATS = { 106, 130, 90, 110, 154, 90 };
-        GENDER_THRESHOLD = -1;
-        break;
-    case PokemonFRLG_RngTarget::lugia:
-        BASE_STATS = { 106, 90, 130, 90, 154, 110 };
-        GENDER_THRESHOLD = -1;
-        break;
-    case PokemonFRLG_RngTarget::deoxys_attack:
-        BASE_STATS = { 50, 180, 20, 180, 20, 150 };
-        GENDER_THRESHOLD = -1;
-        break;
-    case PokemonFRLG_RngTarget::deoxys_defense:
-        BASE_STATS = { 50, 70, 160, 70, 160, 90 };
-        GENDER_THRESHOLD = -1;
-        break;
-    default:
-        break;
+    PokemonFRLG_RngTarget TARGET = PokemonFRLG_RngTarget::sweetscent;
+
+    bool safari_zone = (
+        loc_slug == "safari_zone_area_1_east"  || 
+        loc_slug == "safari_zone_area_2_north" || 
+        loc_slug == "safari_zone_area_3_west"  || 
+        loc_slug == "safari_zone_entrance"
+    );
+    switch (ENCOUNTER_TYPE){
+        case EncounterType::rocksmash:
+            TARGET = PokemonFRLG_RngTarget::rocksmash;
+            break;
+        case EncounterType::grass:
+            if (safari_zone){
+                if (loc_slug == "safari_zone_area_1_east"){
+                    TARGET = PokemonFRLG_RngTarget::safarizoneeast;
+                }else if (loc_slug == "safari_zone_area_2_north"){
+                    TARGET = PokemonFRLG_RngTarget::safarizonenorth;
+                }else if (loc_slug == "safari_zone_area_3_west"){
+                    TARGET = PokemonFRLG_RngTarget::safarizonewest;
+                }else{
+                    TARGET = PokemonFRLG_RngTarget::safarizonecenter;
+                }
+                break;
+            }
+        case EncounterType::surfing:
+            TARGET = safari_zone ? PokemonFRLG_RngTarget::safarizonesurf : PokemonFRLG_RngTarget::sweetscent;
+            break;
+        case EncounterType::oldrod:
+        case EncounterType::goodrod:
+        case EncounterType::superrod:
+            TARGET = safari_zone ? PokemonFRLG_RngTarget::safarizonefish : PokemonFRLG_RngTarget::fishing;
+            break;
+        default:
+            OperationFailedException::fire(
+                ErrorReport::SEND_ERROR_REPORT,
+                "WildRng(): Unrecognized encounter type",
+                env.console
+            ); 
     }
 
     const double FRAMERATE = 59.999977; // FPS
@@ -662,17 +709,15 @@ void StaticRng::program(SingleSwitchProgramEnvironment& env, ProControllerContex
     const int64_t FIXED_SEED_OFFSET = -845; // milliseconds. approximate;
     double SEED_CALIBRATION_FRAMES = RNG_CALIBRATION.seed_calibration / FRAME_DURATION;
     double ADVANCES_CALIBRATION = RNG_CALIBRATION.advances_calibration;
-    double CONTINUE_SCREEN_ADJUSTMENT = RNG_CALIBRATION.csf_calibration;
+    double CONTINUE_SCREEN_ADJUSTMENT = RNG_CALIBRATION.csf_calibration;    
 
-    AdvRngSearcher searcher(TARGET_SEED, ADVANCES, AdvRngMethod::Method1);
-    AdvPokemonResult target_result = searcher.generate_pokemon();
-    env.log("Target IVs:");
-    env.log("HP: " + std::to_string(target_result.ivs.hp));
-    env.log("Atk: " + std::to_string(target_result.ivs.attack));
-    env.log("Def: " + std::to_string(target_result.ivs.defense));
-    env.log("SpA: " + std::to_string(target_result.ivs.spatk));
-    env.log("SpD: " + std::to_string(target_result.ivs.spdef));
-    env.log("Spe: " + std::to_string(target_result.ivs.speed));
+
+    AdvRngWildSearcher searcher(TARGET_SEED, ADVANCES, ENCOUNTER_SLOTS, AdvRngMethod::Any);
+    AdvWildPokemonResult target_result = searcher.generate_pokemon();
+    env.log("Target Species: " + target_result.species);
+    env.log("Target Level: " + std::to_string(target_result.level));
+    env.log("Target Encounter Slot: " + std::to_string(target_result.slot));
+    env.log("Target PID (base10): " + std::to_string(target_result.pid));
 
     RngAdvanceHistory ADVANCE_HISTORY;
     RngCalibrationHistory CALIBRATION_HISTORY; 
@@ -774,7 +819,20 @@ void StaticRng::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         RNG_FILTERS.reset();
         RNG_CALIBRATION.reset();
 
-        bool shiny_found = check_for_shiny(env.console, context, TARGET);
+        int ret = watch_for_shiny_encounter(env.console, context);
+        if (ret < 0){
+            if (TARGET == PokemonFRLG_RngTarget::fishing || TARGET == PokemonFRLG_RngTarget::rocksmash){
+                env.log("No battle triggered. Resetting...");
+                continue;
+            }else{
+                OperationFailedException::fire(
+                    ErrorReport::SEND_ERROR_REPORT,
+                    "WildRng(): Failed to trigger battle",
+                    env.console
+                ); 
+            }
+        }
+        bool shiny_found = (ret == 1);
 
         if (shiny_found){
             env.log("Shiny found!");
@@ -800,11 +858,15 @@ void StaticRng::program(SingleSwitchProgramEnvironment& env, ProControllerContex
             continue;
         }
 
-        AdvObservedPokemon pokemon = read_summary(env, context);
-        AdvRngFilters filters = observation_to_filters(pokemon, BASE_STATS);
+        AdvObservedPokemon pokemon = read_summary(env, context, SPECIES_LIST);
+        RngStats species_stats = stats_data.get_throw(pokemon.species);
+        BaseStats BASE_STATS = species_stats.base_stats;
+        int16_t GENDER_THRESHOLD = species_stats.gender_threshold;
+
+        AdvRngFilters filters = observation_to_filters(pokemon, BASE_STATS, AdvRngMethod::Any);
         RNG_FILTERS.set(filters);
 
-        std::vector<AdvRngState> search_hits = get_search_results(env.console, searcher, filters, SEED_VALUES, ADVANCES, advances_radius, GENDER_THRESHOLD);
+        std::vector<AdvRngState> search_hits = get_wild_search_results(env.console, searcher, filters, SEED_VALUES, ADVANCES, advances_radius, GENDER_THRESHOLD, SUPER_ROD);
         RNG_CALIBRATION.set(
             SEED_CALIBRATION_FRAMES * FRAME_DURATION,
             CONTINUE_SCREEN_ADJUSTMENT,
@@ -812,6 +874,7 @@ void StaticRng::program(SingleSwitchProgramEnvironment& env, ProControllerContex
             search_hits
         );        
         bool finished = update_history(env.console, ADVANCE_HISTORY, CALIBRATION_HISTORY, MAX_HISTORY_LENGTH, SEED_CALIBRATION_FRAMES, ADVANCES_CALIBRATION, CONTINUE_SCREEN_ADJUSTMENT, search_hits, 1);
+        finished = finished || all_indistinguishable(search_hits, searcher, SUPER_ROD);
         if (finished || (MAX_RARE_CANDIES == 0)){
             env.log("RNG search finished.");
             continue;
@@ -820,7 +883,7 @@ void StaticRng::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         for (uint64_t i=0; i<MAX_RARE_CANDIES; i++){
             failed = use_rare_candy(env, context, stats, pokemon, filters, BASE_STATS, i == 0);
 
-            search_hits = get_search_results(env.console, searcher, filters, SEED_VALUES, ADVANCES, advances_radius, GENDER_THRESHOLD);
+            search_hits = get_wild_search_results(env.console, searcher, filters, SEED_VALUES, ADVANCES, advances_radius, GENDER_THRESHOLD, SUPER_ROD);
             RNG_CALIBRATION.set(
                 SEED_CALIBRATION_FRAMES * FRAME_DURATION,
                 CONTINUE_SCREEN_ADJUSTMENT,
@@ -836,6 +899,7 @@ void StaticRng::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                 CONTINUE_SCREEN_ADJUSTMENT, search_hits, 
                 1, 2, force_finish
             );
+            finished = finished || all_indistinguishable(search_hits, searcher, SUPER_ROD);
 
             if (finished){
                 break;
