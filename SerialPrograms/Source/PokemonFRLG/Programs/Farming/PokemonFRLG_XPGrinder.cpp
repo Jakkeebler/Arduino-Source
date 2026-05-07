@@ -16,6 +16,8 @@
 #include "Pokemon/Inference/Pokemon_NameReader.h"
 #include "PokemonFRLG/Programs/PokemonFRLG_RoutePaths.h"
 #include "PokemonFRLG/Programs/PokemonFRLG_PartyScanner.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_KantoMapNavigator.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.h"
 #include "PokemonFRLG/PokemonFRLG_Navigation.h"
 #include "PokemonFRLG_MoveLearnDecider.h"
 #include "PokemonFRLG_XPGrinder.h"
@@ -78,6 +80,18 @@ XPGrinder::XPGrinder()
         "<b>Prevent " + Pokemon::STRING_POKEMON + " from evolving</b>",
         LockMode::LOCK_WHILE_RUNNING,
         false
+    )
+    , GRIND_LOCATION(
+        "<b>Grind Location:</b><br>Where to spin for wild encounters. Map-driven navigation routes the program here from the Pokémon Center after each heal trip and after whiteouts.",
+        GrindLocationId_Database(),
+        LockMode::LOCK_WHILE_RUNNING,
+        GrindLocationId::Route1NorthGrass
+    )
+    , HEAL_LOCATION(
+        "<b>Heal Location:</b><br>Which Pokémon Center to heal at. Travel mode dictates how to get there (Fly / Teleport / Walk); the post-heal walk back to the grind spot is always map-driven.",
+        HealLocationId_Database(),
+        LockMode::LOCK_WHILE_RUNNING,
+        HealLocationId::ViridianCity
     )
     , IGNORE_SHINIES(
         "<b>Ignore shinies</b><br>Do not stop the program when a wild shiny is encountered.",
@@ -162,6 +176,8 @@ XPGrinder::XPGrinder()
     PA_ADD_OPTION(MAX_BATTLES);
     PA_ADD_OPTION(PREVENT_EVOLUTION);
     PA_ADD_OPTION(IGNORE_SHINIES);
+    PA_ADD_OPTION(GRIND_LOCATION);
+    PA_ADD_OPTION(HEAL_LOCATION);
     PA_ADD_OPTION(ROTATION_MODE);
     PA_ADD_OPTION(PARTY_SIZE);
     PA_ADD_OPTION(LANGUAGE);
@@ -187,7 +203,10 @@ const char* travel_method_string(XPGrinder::TravelMethod travel){
     return "?";
 }
 
-void whiteout_resume(SingleSwitchProgramEnvironment& env, ProControllerContext& context){
+void whiteout_resume(
+    SingleSwitchProgramEnvironment& env, ProControllerContext& context,
+    GrindLocationId grind_location
+){
     env.log("Whiteout phase 1: mashing through faint dialogs, watching for screen transition into PC.", COLOR_BLUE);
 
     WhiteScreenOverWatcher white_fade;
@@ -211,35 +230,37 @@ void whiteout_resume(SingleSwitchProgramEnvironment& env, ProControllerContext& 
     pbf_mash_button(context, BUTTON_B, 5000ms);
     context.wait_for_all_requests();
 
-    env.log("Whiteout phase 3: leaving PC and walking back to Route 1 grass.", COLOR_BLUE);
+    env.log("Whiteout phase 3: leaving PC and walking back to grind location via map navigation.", COLOR_BLUE);
     leave_pokecenter(env.console, context);
-    walk_to_route1(env, context);
+    kanto_navigate_to(env, context, goal_for_grind_location(grind_location));
     env.log("Heal trip complete (whiteout). Resuming grinding.", COLOR_BLUE);
 }
 
 void routine_heal_trip(
     SingleSwitchProgramEnvironment& env, ProControllerContext& context,
-    XPGrinder::TravelMethod travel
+    XPGrinder::TravelMethod travel,
+    GrindLocationId grind_location,
+    HealLocationId heal_location
 ){
     env.log(std::string("Heal trip phase 1: traveling to the Pokemon Center via ") + travel_method_string(travel) + ".", COLOR_BLUE);
     switch (travel){
     case XPGrinder::TravelMethod::fly:
         open_fly_map_from_overworld(env.console, context);
-        fly_from_kanto_map(env.console, context, KantoFlyLocation::viridiancity);
+        fly_from_kanto_map(env.console, context, fly_for_heal_location(heal_location));
         break;
     case XPGrinder::TravelMethod::teleport:
         use_teleport_from_overworld(env.console, context);
         break;
     case XPGrinder::TravelMethod::walk:
-        walk_from_route1_to_pokecenter(env, context);
+        kanto_navigate_to(env, context, pc_entrance_for_heal_location(heal_location));
         break;
     }
     env.log("Heal trip phase 2: entering PC, healing party, leaving PC.", COLOR_BLUE);
     enter_pokecenter(env.console, context);
     heal_at_pokecenter(env.console, context);
     leave_pokecenter(env.console, context);
-    env.log("Heal trip phase 3: walking back to Route 1 grass.", COLOR_BLUE);
-    walk_to_route1(env, context);
+    env.log("Heal trip phase 3: walking back to grind location via map navigation.", COLOR_BLUE);
+    kanto_navigate_to(env, context, goal_for_grind_location(grind_location));
     env.log("Heal trip complete. Resuming grinding.", COLOR_BLUE);
 }
 
@@ -335,6 +356,8 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         "Config: MAX_BATTLES=" + std::to_string((uint64_t)MAX_BATTLES) +
         "; PREVENT_EVOLUTION=" + bool_str(PREVENT_EVOLUTION) +
         "; IGNORE_SHINIES=" + bool_str(IGNORE_SHINIES) +
+        "; GRIND_LOCATION=" + GrindLocationId_Database().find((GrindLocationId)GRIND_LOCATION)->display +
+        "; HEAL_LOCATION=" + HealLocationId_Database().find((HealLocationId)HEAL_LOCATION)->display +
         "; ROTATION_MODE=" + std::to_string((int)(RotationMode)ROTATION_MODE) +
         "; PARTY_SIZE=" + std::to_string(party_size) +
         "; HEAL_ON_FAINT=" + bool_str(HEAL_ON_FAINT) +
@@ -452,10 +475,29 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
 
                 case BattleResult::opponentfainted:{
                     stats.battles_won++;
-                    bool move_learned = exit_wild_battle(
+                    WildBattleExit exit_result = exit_wild_battle(
                         env.console, context, false, !!PREVENT_EVOLUTION,
                         &decider, LANGUAGE
                     );
+
+                    //  Stop signal: dialog is still active, do not navigate.
+                    //  Halt the program here and let the user intervene.
+                    if (exit_result == WildBattleExit::StopBattleStuck){
+                        VideoSnapshot screen = env.console.video().snapshot();
+                        send_program_notification(
+                            env,
+                            NOTIFICATION_STATUS_UPDATE,
+                            COLOR_BLUE,
+                            "Stopping: move-learn dialog left active per OnUnknown=Stop policy.",
+                            {}, "",
+                            screen,
+                            true
+                        );
+                        env.log("Halting program; move-learn dialog still on screen.", COLOR_RED);
+                        stop_program = true;
+                        battle_ongoing = false;
+                        break;
+                    }
 
                     //  exit_wild_battle returns on the battle-end black fade (currently
                     //  black). Wait for the overworld fade-in to complete before any
@@ -483,7 +525,7 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         "Grinding experience."
                     );
 
-                    if (move_learned){
+                    if (exit_result == WildBattleExit::LearnHandled){
                         env.log("Move learn occurred. Rescanning slot " + std::to_string(party.current_rotation + 1) + " to refresh move cache.", COLOR_BLUE);
                         try{
                             PartyScanResult r = scan_party_slot(
@@ -512,7 +554,7 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         uint64_t won = stats.battles_won.load();
                         if (won % BATTLES_PER_HEAL_TRIP == 0){
                             env.log("Cadence threshold reached (" + std::to_string(won) + " battles won). Taking heal trip.", COLOR_BLUE);
-                            routine_heal_trip(env, context, TRAVEL_METHOD);
+                            routine_heal_trip(env, context, TRAVEL_METHOD, GRIND_LOCATION, HEAL_LOCATION);
                             party = PartyState(party_size);
                             stats.healing_trips++;
                             failed_encounters = 0;
@@ -590,7 +632,7 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         //  All fainted (whiteout) or single-Pokémon mode.
                         if (HEAL_ON_FAINT || multi_party){
                             env.log("All party fainted — whiteout. Resuming via PC.", COLOR_BLUE);
-                            whiteout_resume(env, context);
+                            whiteout_resume(env, context, GRIND_LOCATION);
                             party = PartyState(party_size);
                             stats.healing_trips++;
                             failed_encounters = 0;
@@ -620,7 +662,7 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         party.current_rotation = next;
                     }else if (HEAL_ON_OUT_OF_PP || (multi_party && party.all_need_heal(true))){
                         env.log("Trigger: move 1 out of PP. Taking routine heal trip.", COLOR_BLUE);
-                        routine_heal_trip(env, context, TRAVEL_METHOD);
+                        routine_heal_trip(env, context, TRAVEL_METHOD, GRIND_LOCATION, HEAL_LOCATION);
                         party = PartyState(party_size);
                         stats.healing_trips++;
                         failed_encounters = 0;

@@ -162,6 +162,15 @@ void StringSelectCellWidget::on_config_value_changed(void* object){
         update_value();
     }, Qt::QueuedConnection);
 }
+void StringSelectCellWidget::on_config_options_changed(){
+    //  The cell's underlying database contents changed. Force a full rebuild
+    //  of the combo box: clear() drops count to 0 so update_value()'s
+    //  load_options() path re-populates from the current database.
+    QMetaObject::invokeMethod(this, [this]{
+        this->clear();
+        update_value();
+    }, Qt::QueuedConnection);
+}
 
 
 

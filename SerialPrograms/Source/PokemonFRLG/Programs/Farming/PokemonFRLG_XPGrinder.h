@@ -14,6 +14,7 @@
 #include "CommonTools/Options/LanguageOCROption.h"
 #include "NintendoSwitch/NintendoSwitch_SingleSwitchProgram.h"
 #include "NintendoSwitch/Options/NintendoSwitch_GoHomeWhenDoneOption.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.h"
 #include "PokemonFRLG_XpGrinderTeamTable.h"
 
 namespace PokemonAutomation{
@@ -54,6 +55,9 @@ private:
 
     BooleanCheckBoxOption PREVENT_EVOLUTION;
     BooleanCheckBoxOption IGNORE_SHINIES;
+
+    EnumDropdownOption<GrindLocationId> GRIND_LOCATION;
+    EnumDropdownOption<HealLocationId> HEAL_LOCATION;
 
     EnumDropdownOption<RotationMode> ROTATION_MODE;
     SimpleIntegerOption<uint64_t> PARTY_SIZE;

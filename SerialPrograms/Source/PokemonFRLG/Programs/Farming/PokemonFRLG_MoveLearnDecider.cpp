@@ -6,6 +6,7 @@
 
 #include <climits>
 #include <vector>
+#include "PokemonFRLG/Resources/PokemonFRLG_MoveData.h"
 #include "PokemonFRLG_MoveLearnDecider.h"
 
 namespace PokemonAutomation{
@@ -78,41 +79,53 @@ std::vector<size_t> MoveLearnDecider::battle_move_priority(
     std::vector<size_t> priority;
     priority.reserve(4);
 
-    //  Pass 1: walk desired in order. For each desired slug, find the slot
-    //  in current_moves that matches and append its index.
-    for (int d = 0; d < 4; d++){
-        const std::string& want = m_desired[d];
-        if (want.empty()){
-            continue;
+    auto already_in = [&priority](size_t idx){
+        for (size_t s : priority){
+            if (s == idx) return true;
         }
-        for (int i = 0; i < 4; i++){
-            if (current_moves[i] == want){
-                bool already_in = false;
-                for (size_t s : priority){
-                    if (s == (size_t)i){ already_in = true; break; }
-                }
-                if (!already_in){
-                    priority.push_back((size_t)i);
-                }
+        return false;
+    };
+
+    //  Walks the user's desired-priority list. For each desired slug that
+    //  matches a current slot (and optionally is damaging), append the slot
+    //  index. Skips slots already in `priority`.
+    auto add_desired_in_order = [&](bool damaging_only){
+        for (int d = 0; d < 4; d++){
+            const std::string& want = m_desired[d];
+            if (want.empty()) continue;
+            for (int i = 0; i < 4; i++){
+                if (current_moves[i] != want) continue;
+                if (already_in((size_t)i)) continue;
+                if (damaging_only && !is_damaging_move(current_moves[i])) continue;
+                priority.push_back((size_t)i);
                 break;
             }
         }
-    }
+    };
 
-    //  Pass 2: append any current slot we haven't used yet, so an unwanted-
-    //  but-known move is still usable as last-resort PP rather than fleeing.
-    for (int i = 0; i < 4; i++){
-        if (current_moves[i].empty()){
-            continue;
-        }
-        bool already_in = false;
-        for (size_t s : priority){
-            if (s == (size_t)i){ already_in = true; break; }
-        }
-        if (!already_in){
+    //  Appends any remaining occupied slot (optionally damaging) not already
+    //  in `priority`.
+    auto add_remaining = [&](bool damaging_only){
+        for (int i = 0; i < 4; i++){
+            if (current_moves[i].empty()) continue;
+            if (already_in((size_t)i)) continue;
+            if (damaging_only && !is_damaging_move(current_moves[i])) continue;
             priority.push_back((size_t)i);
         }
-    }
+    };
+
+    //  Order of preference for grinding battles:
+    //    1. Desired damaging moves (in user's priority order).
+    //    2. Any other damaging move on the Pokemon (so we still attack if
+    //       the desired moves are out of PP).
+    //    3. Desired status moves (last-resort utility).
+    //    4. Any other status move (last-resort PP before fleeing).
+    //  This skips Growl/Tail Whip/Leer/etc. unless every damaging slot is
+    //  exhausted — which is the right behaviour for an XP Grinder.
+    add_desired_in_order(/*damaging_only=*/true);
+    add_remaining       (/*damaging_only=*/true);
+    add_desired_in_order(/*damaging_only=*/false);
+    add_remaining       (/*damaging_only=*/false);
 
     if (priority.empty()){
         //  Nothing identified — fall back to slot 1 (legacy behaviour) so

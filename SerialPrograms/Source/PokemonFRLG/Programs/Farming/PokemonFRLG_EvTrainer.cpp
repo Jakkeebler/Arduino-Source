@@ -688,7 +688,11 @@ EvTrainer::EvTrainerBattleResult EvTrainer::handle_wild_battle(SingleSwitchProgr
                 res.finished_stat = false;
             }
 
-            res.move_learned = exit_wild_battle(env.console, context, !!STOP_ON_MOVE_LEARN, !!PREVENT_EVOLUTION);
+            //  EvTrainer treats any dialog activity (handled or stopped) as
+            //  "move_learned" so its STOP_ON_MOVE_LEARN check still works the
+            //  same way it did before exit_wild_battle started returning an
+            //  enum. NoLearn → false; LearnHandled / StopBattleStuck → true.
+            res.move_learned = exit_wild_battle(env.console, context, !!STOP_ON_MOVE_LEARN, !!PREVENT_EVOLUTION) != WildBattleExit::NoLearn;
         }
     }  
 

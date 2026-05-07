@@ -39,6 +39,13 @@ const MoveData* get_move_nothrow(const std::string& slug);
 //  Reverse lookup: English display name -> slug. Empty string if not found.
 const std::string& parse_move_display_name(const std::string& display_name);
 
+//  Returns true if `slug` exists in the database and its category is
+//  "physical" or "special" (i.e. deals damage). Returns false for status
+//  moves, unknown slugs, and empty slugs. Used by the XP Grinder to skip
+//  pure stat-debuff moves (Growl, Tail Whip, Leer, etc.) when picking which
+//  move to use against a wild Pokemon.
+bool is_damaging_move(const std::string& slug);
+
 //  All moves in slug order.
 const std::vector<MoveData>& all_moves();
 

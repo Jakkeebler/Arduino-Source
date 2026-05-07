@@ -9,6 +9,7 @@
 #include "PokemonFRLG/Resources/PokemonFRLG_MoveData.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_SpeciesData.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_Learnsets.h"
+#include "PokemonFRLG/Resources/PokemonFRLG_Evolutions.h"
 #include "PokemonFRLG_XpGrinderTeamTable.h"
 
 namespace PokemonAutomation{
@@ -81,14 +82,35 @@ const StringSelectDatabase& species_select_database_with_unknown(){
 }  //  namespace
 
 
+namespace{
+
+//  Build a fresh database with "(none)" + the union of moves the species'
+//  evolution chain can learn (alphabetised by display name). Empty species
+//  slug returns "(none)" + the full move list.
+StringSelectDatabase build_chain_move_database(const std::string& species_slug){
+    StringSelectDatabase db;
+    db.add_entry(StringSelectEntry("", "(none)"));
+    std::vector<std::string> learnable = learnable_moves_for_chain(species_slug);
+    for (const std::string& slug : learnable){
+        const MoveData* md = get_move_nothrow(slug);
+        std::string display = md ? md->display_eng : slug;
+        db.add_entry(StringSelectEntry(slug, display));
+    }
+    return db;
+}
+
+}  //  namespace
+
+
 XpGrinderTeamRow::XpGrinderTeamRow(EditableTableOption& parent_table)
     : EditableTableRow(parent_table)
+    , chain_move_db(build_chain_move_database(""))
     , species(species_select_database_with_unknown(), LockMode::LOCK_WHILE_RUNNING, std::string(""))
     , desired_move{
-        StringSelectCell(move_select_database_with_none(), LockMode::LOCK_WHILE_RUNNING, std::string("")),
-        StringSelectCell(move_select_database_with_none(), LockMode::LOCK_WHILE_RUNNING, std::string("")),
-        StringSelectCell(move_select_database_with_none(), LockMode::LOCK_WHILE_RUNNING, std::string("")),
-        StringSelectCell(move_select_database_with_none(), LockMode::LOCK_WHILE_RUNNING, std::string("")),
+        StringSelectCell(chain_move_db, LockMode::LOCK_WHILE_RUNNING, std::string("")),
+        StringSelectCell(chain_move_db, LockMode::LOCK_WHILE_RUNNING, std::string("")),
+        StringSelectCell(chain_move_db, LockMode::LOCK_WHILE_RUNNING, std::string("")),
+        StringSelectCell(chain_move_db, LockMode::LOCK_WHILE_RUNNING, std::string("")),
     }
     , on_unknown(OnUnknownOffered_Database(), LockMode::LOCK_WHILE_RUNNING, OnUnknownOffered::Decline)
 {
@@ -98,12 +120,63 @@ XpGrinderTeamRow::XpGrinderTeamRow(EditableTableOption& parent_table)
     PA_ADD_OPTION(desired_move[2]);
     PA_ADD_OPTION(desired_move[3]);
     PA_ADD_OPTION(on_unknown);
+
+    //  Cascading: when species changes, rebuild this row's move database so
+    //  the four desired-move dropdowns only show moves the chain can learn.
+    species.add_listener(*this);
+}
+XpGrinderTeamRow::~XpGrinderTeamRow(){
+    species.remove_listener(*this);
+}
+void XpGrinderTeamRow::on_config_value_changed(void* object){
+    //  Only react to species changes; move-cell value changes shouldn't
+    //  re-trigger a database rebuild.
+    if (object != &species){
+        return;
+    }
+    rebuild_chain_db_for(species.slug());
+}
+void XpGrinderTeamRow::rebuild_chain_db_for(const std::string& species_slug){
+    //  Capture current selections so we can restore those still valid in
+    //  the new database; ones that aren't will collapse to "(none)".
+    std::array<std::string, 4> saved;
+    for (int i = 0; i < 4; i++){
+        saved[i] = desired_move[i].slug();
+    }
+
+    //  Park each cell at index 0 ("(none)") so its cached index isn't
+    //  out-of-bounds for the swapped-in database before we restore.
+    for (int i = 0; i < 4; i++){
+        desired_move[i].set_by_index(0);
+    }
+
+    //  Move-assign the new contents. The cells' const refs continue to
+    //  point at this same object — the underlying Pimpl is what changes.
+    chain_move_db = build_chain_move_database(species_slug);
+
+    //  Restore each cell. set_by_slug returns an error string when the
+    //  slug isn't found; the cell stays at index 0 in that case.
+    for (int i = 0; i < 4; i++){
+        if (!saved[i].empty()){
+            desired_move[i].set_by_slug(saved[i]);
+        }
+    }
+
+    //  Notify each cell's bound widget to rebuild its option list.
+    for (int i = 0; i < 4; i++){
+        desired_move[i].report_options_changed();
+    }
 }
 std::unique_ptr<EditableTableRow> XpGrinderTeamRow::clone() const{
     std::unique_ptr<XpGrinderTeamRow> ret(new XpGrinderTeamRow(parent()));
+    //  Set species first — its listener fires and rebuilds the move database
+    //  for the new chain. Then setting move slugs has a populated database
+    //  to find them in.
     ret->species.set_by_slug(species.slug());
     for (int i = 0; i < 4; i++){
-        ret->desired_move[i].set_by_slug(desired_move[i].slug());
+        if (!desired_move[i].slug().empty()){
+            ret->desired_move[i].set_by_slug(desired_move[i].slug());
+        }
     }
     ret->on_unknown.set(on_unknown);
     return ret;

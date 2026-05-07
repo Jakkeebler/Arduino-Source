@@ -269,6 +269,41 @@ void EditableTableOption::remove_row(EditableTableRow& row){
     }
     report_value_changed(this);
 }
+void EditableTableOption::move_row(EditableTableRow& row, int direction){
+    if (direction != -1 && direction != +1){
+        return;
+    }
+    {
+        size_t index = row.m_index;
+        if (index == (size_t)0 - 1){
+            return;  //  Orphaned row.
+        }
+
+        WriteSpinLock lg(m_current_lock);
+        if (index >= m_current.size()){
+            return;  //  Stale index.
+        }
+        size_t neighbor = (direction < 0) ? index - 1 : index + 1;
+        //  Boundary checks: index is unsigned so index - 1 wraps around if 0.
+        if (direction < 0 && index == 0){
+            return;
+        }
+        if (direction > 0 && index + 1 >= m_current.size()){
+            return;
+        }
+
+        std::swap(m_current[index], m_current[neighbor]);
+        //  Swap the cached m_index values on the rows themselves so future
+        //  calls (clone, remove, move) on either row resolve to its new
+        //  position. Bump the seqnums so any seqnum-based UI tracking
+        //  notices the change.
+        m_current[index]->m_index.store(index, std::memory_order_relaxed);
+        m_current[neighbor]->m_index.store(neighbor, std::memory_order_relaxed);
+        m_current[index]->m_seqnum = m_seqnum++;
+        m_current[neighbor]->m_seqnum = m_seqnum++;
+    }
+    report_value_changed(this);
+}
 
 
 

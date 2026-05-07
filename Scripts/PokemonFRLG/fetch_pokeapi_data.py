@@ -78,7 +78,10 @@ def fetch_moves(max_dex: int) -> dict:
         for m in data["moves"]:
             for v in m["version_group_details"]:
                 if v["version_group"]["name"] == FRLG_VERSION_GROUP and v["move_learn_method"]["name"] == "level-up":
-                    needed.add(slug_from_url(m["move"]["url"]))
+                    #  Use m["move"]["name"] (the real slug like "pound") rather
+                    #  than slug_from_url which would return the numeric ID
+                    #  from URLs of the form /api/v2/move/1/.
+                    needed.add(m["move"]["name"])
         print(f"  dex {dex}: {data['name']} ({len(needed)} moves so far)")
     print(f"Fetching detail for {len(needed)} moves ...")
     out = {}
@@ -121,7 +124,9 @@ def fetch_learnsets(species_list: list) -> dict:
         for m in d["moves"]:
             for v in m["version_group_details"]:
                 if v["version_group"]["name"] == FRLG_VERSION_GROUP and v["move_learn_method"]["name"] == "level-up":
-                    rows.append((v["level_learned_at"], slug_from_url(m["move"]["url"])))
+                    #  Use m["move"]["name"] (real slug) rather than the
+                    #  numeric ID slug_from_url returns for /move/N/ URLs.
+                    rows.append((v["level_learned_at"], m["move"]["name"]))
         rows.sort()
         if rows:
             out[slug] = [[lvl, mv] for lvl, mv in rows]

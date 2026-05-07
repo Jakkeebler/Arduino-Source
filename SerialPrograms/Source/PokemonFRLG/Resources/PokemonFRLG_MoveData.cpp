@@ -88,6 +88,19 @@ const std::vector<MoveData>& all_moves(){
     return FrlgMoveDatabase::instance().ordered;
 }
 
+bool is_damaging_move(const std::string& slug){
+    if (slug.empty()){
+        return false;
+    }
+    const MoveData* m = get_move_nothrow(slug);
+    if (m == nullptr){
+        return false;
+    }
+    //  PokeAPI's "damage_class" is one of "physical", "special", "status".
+    //  Damaging moves are non-status.
+    return m->category != "status";
+}
+
 const StringSelectDatabase& move_select_database(){
     static const StringSelectDatabase database = []{
         StringSelectDatabase db;

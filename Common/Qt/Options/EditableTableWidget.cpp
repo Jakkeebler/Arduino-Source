@@ -56,7 +56,7 @@ EditableTableWidget::EditableTableWidget(QWidget& parent, EditableTableOption& v
     for (const std::string& name : m_value.make_header()){
         header << QString::fromStdString(name);
     }
-    header << "" << "" << "";
+    header << "" << "" << "" << "" << "";
     m_table->setColumnCount(int(header.size()));
     m_table->setHorizontalHeaderLabels(header);
 
@@ -173,7 +173,7 @@ void EditableTableWidget::update_value(){
     for (const std::string& name : m_value.make_header()){
         header << QString::fromStdString(name);
     }
-    header << "" << "" << "";
+    header << "" << "" << "" << "" << "";
     m_table->setColumnCount(int(header.size()));
     m_table->setHorizontalHeaderLabels(header);
 
@@ -248,6 +248,8 @@ void EditableTableWidget::update_value(){
 //                cout << "cell_widget->width() = " << cell_widget->width() << endl;
 //                cout << "cell_widget->sizeHint().width() = " << cell_widget->sizeHint().width() << endl;
             }
+            m_table->setCellWidget((int)index_new, c++, make_move_up_button(row));
+            m_table->setCellWidget((int)index_new, c++, make_move_down_button(row));
             m_table->setCellWidget((int)index_new, c++, make_clone_button(row));
             m_table->setCellWidget((int)index_new, c++, make_insert_button(row));
             m_table->setCellWidget((int)index_new, c++, make_delete_button(row));
@@ -344,6 +346,47 @@ QWidget* EditableTableWidget::make_delete_button(EditableTableRow& row){
         button, &QPushButton::clicked,
         this, [&](bool){
             m_value.remove_row(row);
+        }
+    );
+
+    return button;
+}
+QWidget* EditableTableWidget::make_move_up_button(EditableTableRow& row){
+    QPushButton* button = new QPushButton(m_table);
+
+    QFont font;
+    font.setBold(true);
+    button->setFont(font);
+    //  Up-pointing triangle (U+25B2). Falls back to plain text if the font
+    //  doesn't render the glyph.
+    button->setText(QString::fromUtf8("\xe2\x96\xb2"));
+    button->setMaximumWidth(40);
+    button->setToolTip("Move row up");
+
+    connect(
+        button, &QPushButton::clicked,
+        this, [&](bool){
+            m_value.move_row(row, -1);
+        }
+    );
+
+    return button;
+}
+QWidget* EditableTableWidget::make_move_down_button(EditableTableRow& row){
+    QPushButton* button = new QPushButton(m_table);
+
+    QFont font;
+    font.setBold(true);
+    button->setFont(font);
+    //  Down-pointing triangle (U+25BC).
+    button->setText(QString::fromUtf8("\xe2\x96\xbc"));
+    button->setMaximumWidth(40);
+    button->setToolTip("Move row down");
+
+    connect(
+        button, &QPushButton::clicked,
+        this, [&](bool){
+            m_value.move_row(row, +1);
         }
     );
 

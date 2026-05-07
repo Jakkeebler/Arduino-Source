@@ -30,6 +30,19 @@ enum class BattleResult{
 
 class MoveLearnDecider;
 
+//  Outcome of exit_wild_battle. Distinguishing these is critical: in the
+//  StopBattleStuck case the move-learn dialog is still on-screen and the
+//  caller MUST NOT attempt overworld navigation; the only safe action is
+//  to halt the program for manual review.
+enum class WildBattleExit{
+    NoLearn,           //  Battle exited cleanly. No move-learn dialog appeared.
+    LearnHandled,      //  Move-learn dialog appeared and was handled (declined or
+                       //  replaced) per the decider; battle exited cleanly.
+    StopBattleStuck,   //  Stop signal fired (stop_on_move_learn=true OR decider
+                       //  returned Stop). exit_wild_battle returned WITHOUT
+                       //  exiting the battle — the dialog is still active.
+};
+
 enum class KantoFlyLocation{
     pallettown,
     viridiancity,
@@ -75,14 +88,22 @@ BattleResult spam_first_move(
 void flee_battle(ConsoleHandle& console, ProControllerContext& context);
 
 // Exit a wild battle after winning. Checks if a Pokemon is learning a new move.
-// If stop_on_move_learn is true, this exits early when a move is being learned
-// without declining it. Otherwise, behaviour is determined by `decider`:
-//   nullptr  - always decline new moves (preserves existing 4 moves).
-//   non-null - OCR the offered move's name, ask the decider whether to accept;
-//              if accepting, OCR the forget screen and ask the decider which
-//              slot to forget. `language` selects the OCR dictionary.
-// Returns true if a move was learned (or attempted) and false otherwise.
-bool exit_wild_battle(
+// If stop_on_move_learn is true, this returns StopBattleStuck early when a
+// move-learn dialog appears (battle is NOT exited). Otherwise, behaviour is
+// determined by `decider`:
+//   nullptr   - always decline new moves (preserves existing 4 moves).
+//   non-null  - OCR the offered move's name, ask the decider whether to accept;
+//               if accepting, OCR the forget screen and ask the decider which
+//               slot to forget. `language` selects the OCR dictionary.
+//
+// Returns:
+//   NoLearn          - no move-learn dialog appeared, battle exited.
+//   LearnHandled     - move-learn dialog handled (declined or replaced),
+//                      battle exited cleanly. Caller may rescan the slot.
+//   StopBattleStuck  - Stop fired (via stop_on_move_learn or decider). The
+//                      dialog is STILL ACTIVE. Caller must halt the program
+//                      and NOT attempt any further navigation.
+WildBattleExit exit_wild_battle(
     ConsoleHandle& console, ProControllerContext& context,
     bool stop_on_move_learn, bool prevent_evolution,
     const MoveLearnDecider* decider = nullptr,

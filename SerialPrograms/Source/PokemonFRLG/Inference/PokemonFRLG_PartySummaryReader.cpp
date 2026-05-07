@@ -4,6 +4,7 @@
  *
  */
 
+#include <set>
 #include "Common/Cpp/Color.h"
 #include "CommonFramework/ImageTypes/ImageViewRGB32.h"
 #include "CommonFramework/ImageTools/ImageBoxes.h"
@@ -11,6 +12,7 @@
 #include "CommonFramework/VideoPipeline/VideoOverlayScopes.h"
 #include "Pokemon/Inference/Pokemon_NameReader.h"
 #include "PokemonFRLG/PokemonFRLG_Settings.h"
+#include "PokemonFRLG/Resources/PokemonFRLG_SpeciesData.h"
 #include "PokemonFRLG_DigitReader.h"
 #include "PokemonFRLG_MoveNameOCR.h"
 #include "PokemonFRLG_PartySummaryReader.h"
@@ -45,6 +47,22 @@ std::string best_token(const OCR::StringMatchResult& result){
         return std::string();
     }
     return result.results.begin()->second.token;
+}
+
+//  Cached PokemonNameReader scoped to FRLG species only. Constraining the
+//  OCR dictionary to ~150 Kanto slugs (vs the global ~1000+ multi-gen list)
+//  fixes the fuzzy-match misreads we hit with the global instance — e.g. an
+//  un-nicknamed "WEEDLE" no longer matches "meditite" because meditite isn't
+//  in the FRLG subset to begin with.
+const Pokemon::PokemonNameReader& frlg_name_reader(){
+    static const Pokemon::PokemonNameReader reader = []{
+        std::set<std::string> subset;
+        for (const SpeciesData& s : all_species()){
+            subset.insert(s.slug);
+        }
+        return Pokemon::PokemonNameReader(subset);
+    }();
+    return reader;
 }
 
 }  //  namespace
@@ -114,8 +132,9 @@ void PartySummaryReader::read_page1(
         "summary_dex_no"
     );
 
-    //  Nickname: shared Pokemon name OCR matcher.
-    auto name_result = Pokemon::PokemonNameReader::instance().read_substring(
+    //  Nickname: FRLG-subset Pokemon name OCR matcher (constrained dictionary
+    //  reduces fuzzy mismatches against gen 5+ species names).
+    auto name_result = frlg_name_reader().read_substring(
         logger, language,
         extract_box_reference(game_screen, m_box_nickname),
         white_text_filters()

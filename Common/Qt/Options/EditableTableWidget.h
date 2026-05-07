@@ -33,6 +33,8 @@ private:
     QWidget* make_clone_button(EditableTableRow& row);
     QWidget* make_insert_button(EditableTableRow& row);
     QWidget* make_delete_button(EditableTableRow& row);
+    QWidget* make_move_up_button(EditableTableRow& row);
+    QWidget* make_move_down_button(EditableTableRow& row);
 
 private:
     EditableTableOption& m_value;

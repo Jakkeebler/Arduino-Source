@@ -567,7 +567,7 @@ void flee_battle(ConsoleHandle& console, ProControllerContext& context){
     }
 }
 
-bool exit_wild_battle(
+WildBattleExit exit_wild_battle(
     ConsoleHandle& console, ProControllerContext& context,
     bool stop_on_move_learn, bool prevent_evolution,
     const MoveLearnDecider* decider,
@@ -578,7 +578,12 @@ bool exit_wild_battle(
     // Replace path: press A on the first, wait for the "Forget which move?"
     //   screen, OCR the 4 current moves, ask the decider which slot to forget,
     //   navigate (DPAD_DOWN x N), press A to confirm.
-    // Stop: return true immediately (caller halts the program).
+    // Stop: return StopBattleStuck immediately — caller must halt and not
+    //   navigate, since the dialog is still on screen.
+
+    auto exit_normally = [&](bool move_learned){
+        return move_learned ? WildBattleExit::LearnHandled : WildBattleExit::NoLearn;
+    };
 
     uint16_t errors = 0;
     uint16_t loops = 0;
@@ -648,7 +653,7 @@ bool exit_wild_battle(
                 continue; // press B as in other cases, and handle any move learning loops that might come up
             }
             console.log("Battle exited.");
-            return move_learned;
+            return exit_normally(move_learned);
         case 1:
             console.log("Battle Advance arrow detected.");
             pbf_press_button(context, BUTTON_B, 200ms, 800ms);
@@ -656,8 +661,8 @@ bool exit_wild_battle(
             continue;
         case 2:
             if (stop_on_move_learn){
-                console.log("Move learn detected. Stopping per stop_on_move_learn.");
-                return true;
+                console.log("Move learn detected. Stopping per stop_on_move_learn (battle dialog still active).");
+                return WildBattleExit::StopBattleStuck;
             }
             //  Second iteration of the learn dialog (after a previous Decline):
             //  this is the "Give up on learning Y?" prompt — press A to confirm.
@@ -685,7 +690,8 @@ bool exit_wild_battle(
                     );
                 }
                 if (action == MoveLearnDecider::FirstAction::Stop){
-                    return true;
+                    console.log("Decider returned Stop (battle dialog still active).");
+                    return WildBattleExit::StopBattleStuck;
                 }
                 if (action == MoveLearnDecider::FirstAction::Replace){
                     //  Accept the prompt and walk the forget-move screen.
@@ -757,7 +763,7 @@ bool exit_wild_battle(
                 pbf_mash_button(context, BUTTON_B, 500ms);
                 context.wait_for_all_requests();
                 console.log("Battle exited.");
-                return move_learned;
+                return exit_normally(move_learned);
             }
             context.wait_for_all_requests();
             rejected_first_box = false;

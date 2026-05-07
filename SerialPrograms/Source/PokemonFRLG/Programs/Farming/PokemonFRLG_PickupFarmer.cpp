@@ -294,7 +294,9 @@ void PickupFarmer::program(SingleSwitchProgramEnvironment& env, ProControllerCon
             } else if (ret2 == BattleResult::opponentfainted){
                 stats.encounters++;
                 encounters_since_item_check++;
-                bool move_learned = exit_wild_battle(env.console, context, !!STOP_ON_MOVE_LEARN, !!PREVENT_EVOLUTION);
+                //  Same as EvTrainer: collapse the enum to a bool so the
+                //  existing STOP_ON_MOVE_LEARN check semantics are preserved.
+                bool move_learned = exit_wild_battle(env.console, context, !!STOP_ON_MOVE_LEARN, !!PREVENT_EVOLUTION) != WildBattleExit::NoLearn;
                 if (move_learned && STOP_ON_MOVE_LEARN){
                     send_program_status_notification(
                         env, NOTIFICATION_STATUS_UPDATE,

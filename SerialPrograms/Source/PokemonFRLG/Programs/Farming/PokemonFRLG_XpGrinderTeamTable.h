@@ -33,15 +33,33 @@ namespace PokemonFRLG{
 const EnumDropdownDatabase<OnUnknownOffered>& OnUnknownOffered_Database();
 
 
-class XpGrinderTeamRow : public EditableTableRow{
+class XpGrinderTeamRow : public EditableTableRow, public ConfigOption::Listener{
 public:
     XpGrinderTeamRow(EditableTableOption& parent_table);
+    virtual ~XpGrinderTeamRow();
     virtual std::unique_ptr<EditableTableRow> clone() const override;
 
+    //  Listener hook: fires when the species cell changes. Rebuilds the
+    //  per-row move database to only include moves the species' evolution
+    //  chain can learn, then notifies each move cell's widget so the
+    //  dropdown options are repopulated live.
+    virtual void on_config_value_changed(void* object) override;
+
 public:
+    //  Per-row mutable move database. Holds "(none)" + the union of moves
+    //  the row's currently-selected species' evolution chain can learn,
+    //  alphabetized. Rebuilt on species change.
+    StringSelectDatabase chain_move_db;
+
     StringSelectCell species;             //  slug; "" = unknown / not yet scanned
     StringSelectCell desired_move[4];     //  slug; "" = no preference for this slot
     EnumDropdownCell<OnUnknownOffered> on_unknown;
+
+private:
+    //  Rebuild chain_move_db's contents based on `species_slug`. Saves and
+    //  restores each move cell's selected slug across the swap (drops to
+    //  (none) for slugs no longer present).
+    void rebuild_chain_db_for(const std::string& species_slug);
 };
 
 

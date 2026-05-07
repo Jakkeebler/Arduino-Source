@@ -170,6 +170,11 @@ public:
     void clone_row(const EditableTableRow& row);
     void remove_row(EditableTableRow& row);
 
+    //  Swap `row` with its immediate neighbor. direction == -1 moves up
+    //  (toward index 0); direction == +1 moves down. No-op if the row is
+    //  orphaned, the row is already at the boundary, or direction isn't ±1.
+    void move_row(EditableTableRow& row, int direction);
+
 
 private:
     const std::string m_label;
