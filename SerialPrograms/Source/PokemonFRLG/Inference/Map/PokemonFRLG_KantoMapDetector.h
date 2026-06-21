@@ -23,7 +23,9 @@ enum class KantoRegion{
     ViridianCity,
     Route1,
     PalletTown,
-    OffMap,  //  Outside any of the three sub-maps (e.g. tree-fill border).
+    ViridianForest,  //  Interior, stitched into the bottom-right corner of
+                     //  the combined map at tile cols 354..407, rows 331..399.
+    OffMap,          //  Outside any of the named sub-maps (tree-fill border etc.).
 };
 
 const char* kanto_region_name(KantoRegion r);

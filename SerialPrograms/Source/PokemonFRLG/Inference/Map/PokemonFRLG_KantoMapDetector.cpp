@@ -18,10 +18,11 @@ namespace PokemonFRLG{
 
 const char* kanto_region_name(KantoRegion r){
     switch (r){
-    case KantoRegion::ViridianCity: return "Viridian City";
-    case KantoRegion::Route1:       return "Route 1";
-    case KantoRegion::PalletTown:   return "Pallet Town";
-    case KantoRegion::OffMap:       return "off-map";
+    case KantoRegion::ViridianCity:   return "Viridian City";
+    case KantoRegion::Route1:         return "Route 1";
+    case KantoRegion::PalletTown:     return "Pallet Town";
+    case KantoRegion::ViridianForest: return "Viridian Forest";
+    case KantoRegion::OffMap:         return "off-map";
     }
     return "?";
 }
@@ -37,6 +38,10 @@ KantoRegion kanto_region_at(int tile_x, int tile_y){
     }
     if (tile_y >= 260 && tile_y < 285 && tile_x >= 55 && tile_x < 85){
         return KantoRegion::PalletTown;
+    }
+    //  Stitched-in interior region (bottom-right corner of the combined map).
+    if (tile_y >= 331 && tile_y < 400 && tile_x >= 354 && tile_x < 408){
+        return KantoRegion::ViridianForest;
     }
     return KantoRegion::OffMap;
 }
