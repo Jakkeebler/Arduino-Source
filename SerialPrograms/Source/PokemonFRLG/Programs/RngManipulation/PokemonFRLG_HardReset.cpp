@@ -29,17 +29,14 @@ namespace PokemonFRLG{
 
 void rng_reset_and_return_home(
     ConsoleHandle& console, ProControllerContext& context,
+    Milliseconds& launch_delay,
     uint8_t user_slot
 ){
     // close the game
     go_home(console, context);
     close_game_from_home(console, context);
 
-    // console specific delays between opening the game and returning to the Home screen
-    Milliseconds launch_delay = 950ms;
-
     bool update_popup = false;
-    bool connect_popup = false;
     WallClock deadline = current_time() + std::chrono::minutes(5);
     while (true){
         if (current_time() > deadline){
@@ -54,7 +51,7 @@ void rng_reset_and_return_home(
         HomeMenuWatcher home(console, std::chrono::milliseconds(2000));
         UpdateMenuWatcher update_menu(console, COLOR_PURPLE);
         CheckOnlineWatcher check_online(COLOR_CYAN);
-        FailedToConnectWatcher failed_to_connect(COLOR_YELLOW);
+        BlackScreenWatcher black_screen(COLOR_BLUE, {0.1, 0.15, 0.8, 0.7});
 
         // first, get to the user select screen
         context.wait_for_all_requests();
@@ -66,7 +63,7 @@ void rng_reset_and_return_home(
                 home,
                 update_menu,
                 check_online,
-                failed_to_connect,
+                black_screen
             }
         );
 
@@ -91,12 +88,13 @@ void rng_reset_and_return_home(
         case 3:
             console.log("Detected check online.", COLOR_BLUE);
             context.wait_for(std::chrono::seconds(1));
-            pbf_press_button(context, BUTTON_A, 160ms, 840ms);     
-            continue;
-        case 4:
-            console.log("Detected failed to connect.", COLOR_BLUE);
             pbf_press_button(context, BUTTON_A, 160ms, 840ms);
             continue;
+        case 4: 
+            console.log("Detected black screen (no user selection screen). Closing game...");
+            go_home(console, context);
+            close_game_from_home(console, context);
+            break;
         default:
             console.log("rng_start_game_and_return_home(): No recognizable state after 30 seconds.", COLOR_RED);
             pbf_press_button(context, BUTTON_HOME, 160ms, 840ms);
@@ -106,6 +104,7 @@ void rng_reset_and_return_home(
         context.wait_for_all_requests();
 
         // By this point, the user selection menu is open with the desired profile selected, and the game hasn't yet been started.
+        // OR the Switch only has one user, so the game will open directly from the Home screen
         // Everything up to this point has not been time-sensitive.
         // Waiting for all requests and using inference should be avoided for any button presses that happen *while the game is open*, 
         // but we can make sure we've gotten back to the home screen and pause there
@@ -115,9 +114,6 @@ void rng_reset_and_return_home(
             pbf_press_button(context, BUTTON_A, 160ms, 840ms);
             pbf_press_dpad(context, DPAD_UP, 40ms, 0ms);
         }
-        if (connect_popup){
-            pbf_press_button(context, BUTTON_A, 160ms, 840ms);
-        }
         pbf_press_button(context, BUTTON_A, 50ms, launch_delay);
         pbf_press_button(context, BUTTON_HOME, 200ms, 1800ms);
 
@@ -125,11 +121,10 @@ void rng_reset_and_return_home(
             // make sure a black screen appeared as a result of the button presses
             // if a popup appears, flag that it happened even if it gets closed by the home button press
             // Not sure how to handle the online check, so leaving it out for now
-            BlackScreenWatcher black_screen(COLOR_BLUE, {0.1, 0.15, 0.8, 0.7});
             int ret3 = wait_until(
                 console, context,
-                std::chrono::seconds(2 + (update_popup ? 1 : 0) + (connect_popup ? 1 : 0)),
-                { black_screen, update_menu, failed_to_connect },
+                std::chrono::seconds(2 + (update_popup ? 1 : 0)),
+                { black_screen, update_menu },
                 1ms
             );
             bool black_screen_detected = false;
@@ -141,9 +136,6 @@ void rng_reset_and_return_home(
             case 1:
                 console.log("Update menu detected.", COLOR_BLUE);
                 update_popup = true;
-            case 2:
-                console.log("Failed to connect detected.", COLOR_BLUE);
-                connect_popup = true;
             }
 
             context.wait_for_all_requests();
@@ -155,8 +147,7 @@ void rng_reset_and_return_home(
                 { 
                     home, 
                     user_select,
-                    update_menu,
-                    failed_to_connect 
+                    update_menu
                 }
             );
 
@@ -167,7 +158,7 @@ void rng_reset_and_return_home(
                     return;
                 }else{
                     console.log("Detected Home screen, but no black screen. Trying again from the beginning...", COLOR_BLUE);
-                    launch_delay += 250ms; // bump this up in case it was too short
+                    launch_delay += 50ms; // bump this up in case it was too short
                     break; // back to the outer loop
                 }
                 return;
@@ -180,11 +171,6 @@ void rng_reset_and_return_home(
             case 2:
                 console.log("Detected update menu. Trying again...", COLOR_BLUE);
                 pbf_press_dpad(context, DPAD_UP, 40ms, 0ms);
-                pbf_press_button(context, BUTTON_A, 50ms, launch_delay);
-                pbf_press_button(context, BUTTON_HOME, 200ms, 2800ms);
-                continue;
-            case 3:
-                console.log("Detected failed to connect.", COLOR_BLUE);
                 pbf_press_button(context, BUTTON_A, 50ms, launch_delay);
                 pbf_press_button(context, BUTTON_HOME, 200ms, 2800ms);
                 continue;
@@ -203,17 +189,15 @@ void rng_reset_and_return_home(
 void reset_and_perform_blind_sequence(
     ConsoleHandle& console, 
     ProControllerContext& context, 
-    PokemonFRLG_RngTarget TARGET,
-    SeedButton SEED_BUTTON,
-    BlackoutButton BLACKOUT_BUTTON,
-    uint64_t SEED_DELAY, 
-    uint64_t CONTINUE_SCREEN_DELAY, 
-    uint64_t TEACHY_DELAY, 
-    uint64_t INGAME_DELAY, 
-    bool SAFARI_ZONE,
-    uint8_t PROFILE
+    PokemonFRLG_RngTarget target,
+    const SeedButton& seed_button,
+    const BlackoutButton& extra_button,
+    const RngTimings& timings,
+    Milliseconds& launch_delay,
+    bool safari_zone,
+    uint8_t profile
 ){
-    rng_reset_and_return_home(console, context, PROFILE); 
+    rng_reset_and_return_home(console, context, launch_delay, profile); 
     ConsoleType console_type = console.state().console_type();
 
     // attempt to resume the game and perform the blind sequence
@@ -234,11 +218,11 @@ void reset_and_perform_blind_sequence(
         context.wait_for_all_requests();
         int ret = run_until<ProControllerContext>(
             console, context,
-            [TARGET, SEED_BUTTON, BLACKOUT_BUTTON, SEED_DELAY, CONTINUE_SCREEN_DELAY, TEACHY_DELAY, INGAME_DELAY, SAFARI_ZONE, console_type](ProControllerContext& context) {
-                perform_blind_sequence(context, TARGET, SEED_BUTTON, BLACKOUT_BUTTON, SEED_DELAY, CONTINUE_SCREEN_DELAY, TEACHY_DELAY, INGAME_DELAY, SAFARI_ZONE, console_type);
+            [target, seed_button, extra_button, timings, safari_zone, console_type](ProControllerContext& context) {
+                perform_blind_sequence(context, target, seed_button, extra_button, timings, safari_zone, console_type);
             },
             { update_detector, user_selection_detector },
-            1000ms
+            5000ms
         );
 
         switch (ret){
@@ -262,10 +246,10 @@ void reset_and_perform_blind_sequence(
 }
 
 #if 0
-void reset_and_detect_copyright_text(ConsoleHandle& console, ProControllerContext& context, uint8_t PROFILE){
+void reset_and_detect_copyright_text(ConsoleHandle& console, ProControllerContext& context, uint8_t profile){
     go_home(console, context);
     close_game_from_home(console, context);
-    rng_start_game_and_return_home(console, context, uint8_t(0), PROFILE);
+    rng_start_game_and_return_home(console, context, uint8_t(0), profile);
     pbf_wait(context, 200ms); // add an extra delay to try to ensure the game doesn't fail to launch
     go_home(console, context);
 

@@ -31,7 +31,8 @@ public:
     )
         : ProController(logger)
         , PABotBase2_OemController(
-            logger, connection, controller_type,
+            logger, logging_throttler(),
+            connection, controller_type,
             [this](double magnitude){ on_rumble(magnitude); }
         )
     {}
@@ -42,11 +43,11 @@ public:
     virtual Logger& logger() override{
         return m_logger;
     }
-    virtual RecursiveThrottler& logging_throttler() override{
-        return m_logging_throttler;
-    }
     virtual bool is_ready() const override{
         return PABotBase2_Controller::is_ready();
+    }
+    virtual ControllerPlayerNumber get_player_number(Cancellable& cancellable) override{
+        return PABotBase2_OemController::get_player_number(cancellable);
     }
 
 
@@ -228,7 +229,7 @@ private:
         }
 
         //  https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/bluetooth_hid_notes.md
-        pabb_NintendoSwitch_OemController_State0x30_Buttons buttons{
+        OemController_State0x30_Buttons buttons{
             .button3 = 0,
             .button4 = 0,
             .button5 = 0,
@@ -260,7 +261,7 @@ private:
             controller_state.right_joystick
         );
 
-        pabb_NintendoSwitch_OemController_State0x30_Gyro gyro{
+        OemController_State0x30_Gyro gyro{
             0x0000,
             0x0000,
             0x0000,

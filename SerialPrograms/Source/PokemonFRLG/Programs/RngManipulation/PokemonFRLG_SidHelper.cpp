@@ -18,6 +18,7 @@
 #include "PokemonFRLG/Inference/PokemonFRLG_TrainerIdReader.h"
 #include "PokemonFRLG/PokemonFRLG_Navigation.h"
 #include "PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.h"
+#include "PokemonFRLG_RngCalibration.h"
 #include "PokemonFRLG_SidHelper.h"
 
 namespace PokemonAutomation{
@@ -72,7 +73,7 @@ SidHelper::SidHelper()
         "The target advances for finalizing the SID. This is arbitrary unless you're attempting to hit a specific TID/SID combination.<br>"
         "This value should always be odd.",
         LockMode::LOCK_WHILE_RUNNING, 
-        2301, 2275 // default, min
+        3001, 2275 // default, min
     )
     , NUM_CANDIDATES(
         "<b># Candidate SIDs:</b><br>"
@@ -101,7 +102,8 @@ namespace{
 void set_sid_from_name_screen(
     SingleSwitchProgramEnvironment& env,
     ProControllerContext& context,
-    const uint64_t& SID_DELAY
+    const uint64_t& SID_DELAY,
+    bool extra_press_at_end
 ){
     // this is performed blind to try to maximize consistency of timing
     // ensure the OK button is selected
@@ -122,6 +124,12 @@ void set_sid_from_name_screen(
         ? SID_DELAY - 13700
         : 0
     );
+
+    if (extra_press_at_end){
+        pbf_press_button(context, BUTTON_A, 200ms, 1300ms);
+        delay = delay > 1500ms ? delay - 1500ms : 0ms;
+    }
+
     pbf_press_button(context, BUTTON_A, 200ms, delay);
 
     // finish dialogue and lock in SID
@@ -202,7 +210,7 @@ void navigate_to_trainer_card(SingleSwitchProgramEnvironment& env, ProController
     }
 }
 
-uint16_t read_tid(SingleSwitchProgramEnvironment& env, ProControllerContext& context){
+uint16_t read_tid(SingleSwitchProgramEnvironment& env, ProControllerContext& context, Language lang){
     TrainerIdReader reader;
     VideoOverlaySet overlays(env.console.overlay());
     reader.make_overlays(overlays);
@@ -210,7 +218,7 @@ uint16_t read_tid(SingleSwitchProgramEnvironment& env, ProControllerContext& con
     VideoSnapshot screen = env.console.video().snapshot();
     env.log("Trainer Card detected.");
     env.log("Reading TID...");
-    uint16_t tid = reader.read_tid(env.logger(), screen);
+    uint16_t tid = reader.read_tid(env.logger(), lang, screen);
     env.log("TID: " + std::to_string(tid));
 
     context.wait_for_all_requests();
@@ -262,9 +270,6 @@ void SidHelper::program(SingleSwitchProgramEnvironment& env, ProControllerContex
 
     // SidHelper_Descriptor::Stats& stats = env.current_stats<SidHelper_Descriptor::Stats>();
 
-    double FRAMERATE = 59.999977; // FPS
-    double FRAME_DURATION = 1000 / FRAMERATE; // ms
-
     uint64_t FINAL_TEXT_FRAMES;
     Language lang = LANGUAGE;
     switch (lang){
@@ -290,16 +295,21 @@ void SidHelper::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         FINAL_TEXT_FRAMES = 249;
     }
 
-    const double& FIXED_ADVANCES_OFFSET = 7; // determined empirically. Probably not console/setup dependent
+    static const int64_t FIXED_ADVANCES_OFFSET = 7; // determined empirically. Probably not console/setup dependent
 
-    const uint64_t SID_DELAY = uint64_t((TARGET_ADVANCES - 2*FINAL_TEXT_FRAMES + FIXED_ADVANCES_OFFSET) * FRAME_DURATION / 2); // advances pass 2 by 2
+    bool extra_press_at_end = (
+        LANGUAGE == Language::German ||
+        LANGUAGE == Language::Japanese
+    );
+
+    const uint64_t SID_DELAY = uint64_t((TARGET_ADVANCES - 2*FINAL_TEXT_FRAMES + FIXED_ADVANCES_OFFSET) * FRLG_FRAME_DURATION / 2); // advances pass 2 by 2
     env.log("Delay: " + std::to_string(SID_DELAY) + "ms");
 
-    set_sid_from_name_screen(env, context, SID_DELAY);
+    set_sid_from_name_screen(env, context, SID_DELAY, extra_press_at_end);
     finish_intro_animations(env, context);
     navigate_to_trainer_card(env, context);
 
-    uint16_t tid = read_tid(env, context);
+    uint16_t tid = read_tid(env, context, lang);
 
     std::vector<std::pair<std::string, std::string>> sid_messages = get_sid_messages(
         env, context, tid, TARGET_ADVANCES, NUM_CANDIDATES

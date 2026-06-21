@@ -27,10 +27,13 @@ class PABotBase2_OemController :
 public:
     using ContextType = ProControllerContext;
 
+    static void add_message_loggers(PABotBase2::MessageLogger& message_logger);
+
 
 public:
     PABotBase2_OemController(
         Logger& logger,
+        RecursiveThrottler& logging_throttler,
         PABotBase2::Connection& connection,
         ControllerType controller_type,
         std::function<void(double magnitude)> on_rumble
@@ -38,33 +41,35 @@ public:
     ~PABotBase2_OemController();
     void stop();
 
-    static void run_preconnect_configure(
+    static bool run_preconnect_configure(
         Logger& logger,
         PABotBase2::Connection& connection,
         ControllerType controller_type
     );
 
+    ControllerPlayerNumber get_player_number(Cancellable& cancellable);
+
 
 protected:
     static Button populate_report_buttons(
-        pabb_NintendoSwitch_OemController_State0x30_Buttons& buttons,
+        OemController_State0x30_Buttons& buttons,
         const SwitchControllerState& controller_state
     );
     static bool populate_report_gyro(
-        pabb_NintendoSwitch_OemController_State0x30_Gyro& gyro,
+        OemController_State0x30_Gyro& gyro,
         const SwitchControllerState& controller_state
     );
 
     void issue_report(
         Cancellable* cancellable,
         WallDuration duration,
-        const pabb_NintendoSwitch_OemController_State0x30_Buttons& buttons
+        const OemController_State0x30_Buttons& buttons
     );
     void issue_report(
         Cancellable* cancellable,
         WallDuration duration,
-        const pabb_NintendoSwitch_OemController_State0x30_Buttons& buttons,
-        const pabb_NintendoSwitch_OemController_State0x30_Gyro& gyro
+        const OemController_State0x30_Buttons& buttons,
+        const OemController_State0x30_Gyro& gyro
     );
 
 
@@ -166,6 +171,7 @@ protected:
     std::unique_ptr<ControllerStatusThread> m_status_thread;
 
     std::string m_color_html;
+    std::atomic<ControllerPlayerNumber> m_player_number;
 };
 
 

@@ -9,6 +9,7 @@
 #include "CommonTools/Async/InferenceRoutines.h"
 #include "CommonTools/VisualDetectors/FrozenImageDetector.h"
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_PushButtons.h"
+#include "NintendoSwitch/Programs/NintendoSwitch_GameEntry.h"
 #include "PokemonSwSh/ShinyHuntTracker.h"
 #include "PokemonBDSP/Inference/PokemonBDSP_SelectionArrow.h"
 #include "PokemonBDSP/Inference/Battles/PokemonBDSP_BattleMenuDetector.h"
@@ -138,13 +139,9 @@ bool DoublesLeveling::battle(SingleSwitchProgramEnvironment& env, ProControllerC
             pbf_mash_button(context, BUTTON_B, 2000ms);
             return false;
         default:
-            env.log("Timed out.", COLOR_RED);
             stats.add_error();
-            OperationFailedException::fire(
-                ErrorReport::SEND_ERROR_REPORT,
-                "Timed out after 2 minutes.",
-                env.console
-            );
+            env.log("Timed out after 2 minutes. Assume battle ended.", COLOR_RED);
+            return false;
         }
     }
 
@@ -169,7 +166,7 @@ void DoublesLeveling::program(SingleSwitchProgramEnvironment& env, ProController
     );
 
     //  Connect the controller.
-    pbf_press_button(context, BUTTON_B, 40ms, 40ms);
+    require_player(env.console, context, BUTTON_B);
 
     //  Encounter Loop
     while (true){

@@ -124,6 +124,7 @@ public:
 
     Pimpl<ThemeSelectorOption> THEME;
     BooleanCheckBoxOption USE_PADDLE_OCR;
+    BooleanCheckBoxOption USE_GPU_FOR_ML_INFERENCE;
     Pimpl<ResolutionOption> WINDOW_SIZE;
     Pimpl<ResolutionOption> LOG_WINDOW_SIZE;
     BooleanCheckBoxOption LOG_WINDOW_STARTUP;
@@ -180,7 +181,11 @@ class GlobalSettings_Descriptor : public PanelDescriptor{
 public:
     GlobalSettings_Descriptor();
 public:
-    static PanelDescriptorWrapper<GlobalSettings_Descriptor, GlobalSettingsPanel> INSTANCE;
+    using Wrapper = PanelDescriptorWrapper<GlobalSettings_Descriptor, GlobalSettingsPanel>;
+    static Wrapper& instance(){
+        static Wrapper wrapper;
+        return wrapper;
+    }
 };
 
 

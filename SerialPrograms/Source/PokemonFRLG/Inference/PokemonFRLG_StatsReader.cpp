@@ -27,67 +27,123 @@ namespace NintendoSwitch {
 namespace PokemonFRLG {
 
 StatsReader::StatsReader(Color color)
-        : m_color(color), m_box_nature(0.028976, 0.729610, 0.502487, 0.066639),
-            m_box_level(0.052000, 0.120140, 0.099000, 0.069416),
-            m_box_name(0.163158, 0.122917, 0.262811, 0.066639),
-            m_box_gender(0.430769, 0.114423, 0.034615, 0.081731),
-            m_box_hp(0.805274, 0.131247, 0.183790, 0.066639),
-            m_box_attack(0.891000, 0.245089, 0.097607, 0.066639),
-            m_box_defense(0.891000, 0.325612, 0.097607, 0.066639),
-            m_box_sp_attack(0.891000, 0.406134, 0.097607, 0.066639),
-            m_box_sp_defense(0.891000, 0.486657, 0.097607, 0.066639),
-            m_box_speed(0.891000, 0.567180, 0.097607, 0.066639){}
+    : m_color(color), 
+    m_box_nature(0.028976, 0.729610, 0.502487, 0.066639),
+    m_box_level(0.052000, 0.120140, 0.099000, 0.069416),
+    m_box_name(0.163158, 0.122917, 0.262811, 0.066639),
+    m_box_gender(0.430769, 0.114423, 0.034615, 0.081731),
+    m_box_hp(0.805274, 0.131247, 0.183790, 0.066639),
+    m_box_attack(0.891000, 0.245089, 0.097607, 0.066639),
+    m_box_defense(0.891000, 0.325612, 0.097607, 0.066639),
+    m_box_sp_attack(0.891000, 0.406134, 0.097607, 0.066639),
+    m_box_sp_defense(0.891000, 0.486657, 0.097607, 0.066639),
+    m_box_speed(0.891000, 0.567180, 0.097607, 0.066639),
+    m_box_nature_jpn(0.048718, 0.752884, 0.458205, 0.064423),
+    m_box_level_jpn(0.060256, 0.116346, 0.124359, 0.075962),
+    m_box_name_jpn(0.176282, 0.114423, 0.257051, 0.077885),
+    m_box_gender_jpn(0.435256, 0.115384, 0.035256, 0.076923),
+    m_box_hp_jpn(0.717165, 0.131662, 0.269632, 0.066876),
+    m_box_attack_jpn(0.859615, 0.243269, 0.121795, 0.068269),
+    m_box_defense_jpn(0.859615, 0.323792, 0.121795, 0.068269),
+    m_box_sp_attack_jpn(0.859615, 0.404315, 0.121795, 0.068269),
+    m_box_sp_defense_jpn(0.859615, 0.484838, 0.121795, 0.068269),
+    m_box_speed_jpn(0.859615, 0.565361, 0.121795, 0.068269)   
+{}
 
 void StatsReader::make_overlays(VideoOverlaySet &items) const {
     const BoxOption &GAME_BOX = GameSettings::instance().GAME_BOX;
     items.add(m_color, GAME_BOX.inner_to_outer(m_box_nature));
     items.add(m_color, GAME_BOX.inner_to_outer(m_box_level));
     items.add(m_color, GAME_BOX.inner_to_outer(m_box_name));
+    items.add(m_color, GAME_BOX.inner_to_outer(m_box_gender));
     items.add(m_color, GAME_BOX.inner_to_outer(m_box_hp));
     items.add(m_color, GAME_BOX.inner_to_outer(m_box_attack));
     items.add(m_color, GAME_BOX.inner_to_outer(m_box_defense));
     items.add(m_color, GAME_BOX.inner_to_outer(m_box_sp_attack));
     items.add(m_color, GAME_BOX.inner_to_outer(m_box_sp_defense));
     items.add(m_color, GAME_BOX.inner_to_outer(m_box_speed));
+    items.add(m_color, GAME_BOX.inner_to_outer(m_box_level_jpn));
+    items.add(m_color, GAME_BOX.inner_to_outer(m_box_name_jpn));
+    items.add(m_color, GAME_BOX.inner_to_outer(m_box_gender_jpn));
+    items.add(m_color, GAME_BOX.inner_to_outer(m_box_hp_jpn));
+    items.add(m_color, GAME_BOX.inner_to_outer(m_box_attack_jpn));
+    items.add(m_color, GAME_BOX.inner_to_outer(m_box_defense_jpn));
+    items.add(m_color, GAME_BOX.inner_to_outer(m_box_sp_attack_jpn));
+    items.add(m_color, GAME_BOX.inner_to_outer(m_box_sp_defense_jpn));
+    items.add(m_color, GAME_BOX.inner_to_outer(m_box_speed_jpn));
 }
 
 void StatsReader::read_page1(
-    Logger &logger, Language language,
-    const ImageViewRGB32 &frame,
-    PokemonFRLG_Stats &stats,
+    Logger& logger, Language language,
+    const ImageViewRGB32& frame,
+    PokemonFRLG_Stats& stats,
     const std::set<std::string>& subset
 ){
     const bool save_debug_images = GlobalSettings::instance().SAVE_DEBUG_IMAGES;
     ImageViewRGB32 game_screen =
             extract_box_reference(frame, GameSettings::instance().GAME_BOX);
 
-    // Read Name (white text on lilac background).
-    // Use multifiltered OCR across multiple narrow white bands. This tolerates
-    // brightness shifts (down to ~0xc0) while still preferring cleaner bands.
-    const std::vector<OCR::TextColorRange> name_text_color_ranges{
-        {combine_rgb(224, 224, 224), combine_rgb(255, 255, 255)},
-        {combine_rgb(208, 208, 208), combine_rgb(255, 255, 255)},
-        {combine_rgb(192, 192, 192), combine_rgb(255, 255, 255)},
-    };
 
-    if (subset.size() > 0){
-        auto name_result = Pokemon::PokemonNameReader(subset).read_substring(
-                logger, language, extract_box_reference(game_screen, m_box_name),
-                name_text_color_ranges);
-        if (!name_result.results.empty()){
-            stats.name = name_result.results.begin()->second.token;
+    const bool jpn = language == Language::Japanese;
+
+    ImageViewRGB32 name_box = extract_box_reference(game_screen, jpn ? m_box_name_jpn : m_box_name);
+
+
+    static const std::vector<int> WHITE_THRESHOLDS = { 180, 200, 220, 230, 240 };
+    OCR::StringMatchResult best_result;
+    bool initialized = false;
+    for (int thresh : WHITE_THRESHOLDS){
+        ImageRGB32 name_filtered(name_box.width(), name_box.height());
+        for (size_t r = 0; r < name_box.height(); r++){
+            for (size_t c = 0; c < name_box.width(); c++){
+                Color pixel(name_box.pixel(c, r));
+                if (pixel.red() > thresh && pixel.green() > thresh && pixel.blue() > thresh){
+                    name_filtered.pixel(c, r) = (uint32_t)0xff000000; // Black
+                }else{
+                    name_filtered.pixel(c, r) = (uint32_t)0xffffffff; // White
+                }
+            }
         }
-    }else{
-        auto name_result = Pokemon::PokemonNameReader::instance().read_substring(
-                logger, language, extract_box_reference(game_screen, m_box_name),
-                name_text_color_ranges);
-        if (!name_result.results.empty()){
-            stats.name = name_result.results.begin()->second.token;
+        ImageRGB32 name_ready = preprocess_for_ocr(
+            name_filtered, "name", 7, 2, true, 
+            combine_rgb(0, 0, 0), jpn ? combine_rgb(160, 160, 160) : combine_rgb(140, 140, 140)
+        );
+
+        const std::vector<OCR::TextColorRange> name_text_color_ranges{
+            {combine_rgb(0, 0, 0), combine_rgb(120, 120, 120)}
+        };
+
+        OCR::StringMatchResult result;
+        if (subset.size() > 0){
+            auto name_result = Pokemon::PokemonNameReader(subset).read_substring(
+                    logger, language, name_ready, name_text_color_ranges
+            );
+            if (!name_result.results.empty()){
+                result = name_result;
+            }
+        }else{
+            auto name_result = Pokemon::PokemonNameReader::instance().read_substring(
+                    logger, language, name_ready, name_text_color_ranges
+            );
+            if (!name_result.results.empty()){
+                result = name_result;
+            }
         }
+        if (!result.results.empty()){
+            if (!initialized){
+                best_result = result;
+                initialized = true;
+            }else if (result.results.begin()->first < best_result.results.begin()->first){
+                best_result = result;
+            }
+        }
+    }
+    if (initialized && !best_result.results.empty()){
+        stats.name = best_result.results.begin()->second.token;
     }
 
     // Detect gender by comparing red vs blue pixels
-    ImageViewRGB32 gender_box = extract_box_reference(game_screen, m_box_gender);
+    ImageViewRGB32 gender_box = extract_box_reference(game_screen, jpn ? m_box_gender_jpn : m_box_gender);
 
     const bool replace_color_within_range = false;
     const ImageRGB32 red_region = filter_rgb32_range(
@@ -112,41 +168,7 @@ void StatsReader::read_page1(
         stats.gender = SummaryGender::Genderless;
     }
 
-
-
-    ImageViewRGB32 level_box = extract_box_reference(game_screen, m_box_level);
-
-    ImageRGB32 level_upscaled =
-            level_box.scale_to(level_box.width() * 4, level_box.height() * 4);
-    if (save_debug_images){
-        level_upscaled.save("DebugDumps/ocr_level_upscaled.png");
-    }
-
-    // The level has a colored (lilac) background. The text is white, with a
-    // gray/black shadow. To bridge the gaps and make a solid black character on a
-    // white background: We want to turn BOTH the bright white text AND the dark
-    // shadow into BLACK pixels, and turn the mid-tone lilac background into
-    // WHITE. We can do this by keeping pixels that are very bright (text) or very
-    // dark (shadow).
-
-    ImageRGB32 level_ready(level_upscaled.width(), level_upscaled.height());
-    for (size_t r = 0; r < level_upscaled.height(); r++){
-        for (size_t c = 0; c < level_upscaled.width(); c++){
-            Color pixel(level_upscaled.pixel(c, r));
-            // If it's very bright (white text) OR very dark (shadow), it becomes
-            // black text. Otherwise (lilac background), it becomes white background.
-            if ((pixel.red() > 200 && pixel.green() > 200 && pixel.blue() > 200) ||
-                    (pixel.red() < 100 && pixel.green() < 100 && pixel.blue() < 100)){
-                level_ready.pixel(c, r) = (uint32_t)0xff000000; // Black
-            }else{
-                level_ready.pixel(c, r) = (uint32_t)0xffffffff; // White
-            }
-        }
-    }
-
-    if (save_debug_images){
-        level_ready.save("DebugDumps/ocr_level_ready.png");
-    }
+    ImageViewRGB32 level_box = extract_box_reference(game_screen, jpn ? m_box_level_jpn : m_box_level);
 
     if (!GlobalSettings::instance().USE_PADDLE_OCR){
         // The level uses white text with dark shadow on a lilac background.
@@ -155,9 +177,20 @@ void StatsReader::read_page1(
         // shadow outline fragmented into many small disconnected blobs.
         // Preprocess: convert bright-white text pixels to black so the binarizer
         // merges text + shadow into one solid connected blob per digit.
-        ImageRGB32 preprocessed = filter_rgb32_range(
-            level_box, 0xffc8c8c8, 0xffffffff, Color(0xff000000), true
-        );
+        ImageRGB32 preprocessed = level_box.scale_to(level_box.width(), level_box.height());
+        for (size_t r = 0; r < level_box.height(); r++){
+            for (size_t c = 0; c < level_box.width(); c++){
+                Color pixel(level_box.pixel(c, r));
+                // Try to detect lilac background first based on low green channel, 
+                // replacing it with a darker lilac color (for matching the template)
+                // For other pixels, if it's bright it becomes black text. 
+                if ((pixel.blue() > pixel.green() + 25) && (pixel.red() > pixel.green() + 15)){
+                    preprocessed.pixel(c, r) = (uint32_t)0xffd1b0f0; // from template
+                }else if (pixel.red() > 200 && pixel.green() > 200 && pixel.blue() > 200){
+                    preprocessed.pixel(c, r) = (uint32_t)0xff000000; // Black
+                }
+            }
+        }
         if (save_debug_images){
             preprocessed.save("DebugDumps/ocr_level_preprocessed.png");
         }
@@ -179,6 +212,37 @@ void StatsReader::read_page1(
                 logger, level_digit_view, 230.0, DigitTemplateType::LevelBox,
                 "levelDigit", 0x7F);
     }else{
+        // The level has a colored (lilac) background. The text is white, with a
+        // gray/black shadow. To bridge the gaps and make a solid black character on a
+        // white background: We want to turn BOTH the bright white text AND the dark
+        // shadow into BLACK pixels, and turn the mid-tone lilac background into
+        // WHITE. We can do this by keeping pixels that are very bright (text) or very
+        // dark (shadow).
+        ImageRGB32 level_upscaled =
+            level_box.scale_to(level_box.width() * 4, level_box.height() * 4);
+        if (save_debug_images){
+            level_upscaled.save("DebugDumps/ocr_level_upscaled.png");
+        }
+        ImageRGB32 level_ready(level_upscaled.width(), level_upscaled.height());
+        for (size_t r = 0; r < level_upscaled.height(); r++){
+            for (size_t c = 0; c < level_upscaled.width(); c++){
+                Color pixel(level_upscaled.pixel(c, r));
+                // Try to detect lilac background first based on low green channel.
+                // For other pixels, if it's very bright (white text) OR very dark (shadow),
+                // it becomes black text. Otherwise, it becomes white background.
+                if ((pixel.blue() > pixel.green() + 25) && (pixel.red() > pixel.green() + 15)){
+                    level_ready.pixel(c, r) = (uint32_t)0xffffffff; // White
+                }else if ((pixel.red() > 200 && pixel.green() > 200 && pixel.blue() > 200) ||
+                        (pixel.red() < 100 && pixel.green() < 100 && pixel.blue() < 100)){
+                    level_ready.pixel(c, r) = (uint32_t)0xff000000; // Black
+                }else{
+                    level_ready.pixel(c, r) = (uint32_t)0xffffffff; // White
+                }
+            }
+        }
+        if (save_debug_images){
+            level_ready.save("DebugDumps/ocr_level_ready.png");
+        }
         // Pass the binarized image to PaddleOCR
         stats.level = OCR::read_number(logger, level_ready, language);
     }
@@ -188,7 +252,7 @@ void StatsReader::read_page1(
     // Morph close on the inverted image (text=white) bridges gaps in text
     // regions by growing white->eroding back. Works per-channel on CV_8UC4.
     const static Pokemon::NatureReader reader("Pokemon/NatureCheckerOCR.json");
-    ImageViewRGB32 nature_raw = extract_box_reference(game_screen, m_box_nature);
+    ImageViewRGB32 nature_raw = extract_box_reference(game_screen, jpn ? m_box_nature_jpn : m_box_nature);
     if (save_debug_images){
         nature_raw.save("DebugDumps/ocr_nature_0_raw.png");
     }
@@ -319,13 +383,15 @@ void StatsReader::read_page1(
 }
 
 void StatsReader::read_page2(
-    Logger &logger, const ImageViewRGB32 &frame,
-    PokemonFRLG_Stats &stats
+    Logger& logger, Language language,
+    const ImageViewRGB32& frame, PokemonFRLG_Stats& stats
 ){
+    const bool jpn = language == Language::Japanese;
+
     ImageViewRGB32 game_screen =
             extract_box_reference(frame, GameSettings::instance().GAME_BOX);
 
-    auto read_stat = [&](const ImageFloatBox &box, const std::string &name){
+    auto read_stat = [&](const ImageFloatBox& box, const std::string& name){
         ImageViewRGB32 stat_region = extract_box_reference(game_screen, box);
 
         if (!GlobalSettings::instance().USE_PADDLE_OCR){
@@ -350,23 +416,45 @@ void StatsReader::read_page2(
         );
     };
 
-    // HP box: shift right 55% to clear the "/" character.
-    ImageFloatBox total_hp_box(
-        m_box_hp.x + m_box_hp.width * 0.60, m_box_hp.y,
-        m_box_hp.width * 0.40, m_box_hp.height
-    );
+    auto read_hp = [&](const ImageFloatBox& box){
+        // this captures the current HP, "/", and total HP
+        int res = read_stat(box, "hp");
+
+        // check for wrong numbers of digits to remove the "/"
+        // since hp will always be a 2 or 3 digit number.
+        // Be warned: "/" is usually ignored entirely, but is sometimes detected as 2.
+        // Current HP can be anything between 0 and the total
+        std::string res_str = std::to_string(res);
+
+        // >5 digits unambiguously indicates the total HP should be 3 read digits
+        // For non-fainted Pokemon (a leading 0 would throw things off), 3 read digits unambiguously indicates the total HP should be 2 digits
+        // 4-5 read digits is ambiguous:
+        //      case 1: a 3-digit total where the "/" is included and current HP is one digit       (5 digits read)
+        //      case 2: a 2-digit total where the "/" is included and the current HP is two digits  (5 digits read)
+        //      case 3: a 3-digit total where the "/" is dropped and the current HP is one digit    (4 digits read)
+        //      case 4: a 2-digit total where the "/" is dropped and the current HP is two digits   (4 digits read)
+        // This will assume a 2-digit HP total in case of ambiguity, consistent with a Pokemon at full HP
+        if (res_str.size() > 5){ 
+            return std::stoi(res_str.substr(res_str.size() - 3));
+        }
+        if (res_str.size() > 2){ 
+            return std::stoi(res_str.substr(res_str.size() - 2));
+        }
+        return res;
+    };
 
     auto assign_stat = [](std::optional<unsigned>& field, int value){
         if (value != -1){
             field = static_cast<unsigned>(value);
         }
     };
-    assign_stat(stats.hp, read_stat(total_hp_box, "hp"));
-    assign_stat(stats.attack, read_stat(m_box_attack, "attack"));
-    assign_stat(stats.defense, read_stat(m_box_defense, "defense"));
-    assign_stat(stats.sp_attack, read_stat(m_box_sp_attack, "spatk"));
-    assign_stat(stats.sp_defense, read_stat(m_box_sp_defense, "spdef"));
-    assign_stat(stats.speed, read_stat(m_box_speed, "speed"));
+
+    assign_stat(stats.hp, read_hp(jpn ? m_box_hp_jpn : m_box_hp));
+    assign_stat(stats.attack, read_stat(jpn ? m_box_attack_jpn : m_box_attack, "attack"));
+    assign_stat(stats.defense, read_stat(jpn ? m_box_defense_jpn : m_box_defense, "defense"));
+    assign_stat(stats.sp_attack, read_stat(jpn ? m_box_sp_attack_jpn : m_box_sp_attack, "spatk"));
+    assign_stat(stats.sp_defense, read_stat(jpn ? m_box_sp_defense_jpn : m_box_sp_defense, "spdef"));
+    assign_stat(stats.speed, read_stat(jpn ? m_box_speed_jpn : m_box_speed, "speed"));
 }
 
 } // namespace PokemonFRLG

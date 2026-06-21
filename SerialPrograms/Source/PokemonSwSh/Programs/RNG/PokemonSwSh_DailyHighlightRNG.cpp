@@ -180,7 +180,7 @@ void DailyHighlightRNG::interact_with_trader(SingleSwitchProgramEnvironment& env
     VideoOverlaySet boxes(env.console);
     SelectionArrowFinder arrow_detector(env.console, ImageFloatBox(0.5, 0.58, 0.2, 0.08));
     arrow_detector.make_overlays(boxes);
-    YCommIconDetector y_comm_icon_detector(true);
+    YCommIconWatcher y_comm_icon_detector;
     size_t tries = 0;
 
     while (true){
@@ -387,7 +387,7 @@ void DailyHighlightRNG::prepare_game_state(SingleSwitchProgramEnvironment& env, 
 void DailyHighlightRNG::return_to_overworld(SingleSwitchProgramEnvironment& env, ProControllerContext& context, bool wait_after_detection){
     context.wait_for_all_requests();
     env.console.log("Returning to the overworld.");
-    YCommIconDetector y_comm_icon_detector(true);
+    YCommIconWatcher y_comm_icon_detector;
     int ret = run_until<ProControllerContext>(
         env.console, context,
         [](ProControllerContext& context){
@@ -453,7 +453,8 @@ void DailyHighlightRNG::program(SingleSwitchProgramEnvironment& env, ProControll
     if (START_LOCATION.start_in_grip_menu()){
         grip_menu_connect_go_home(context);
     }else{
-        pbf_press_button(context, BUTTON_B, 80ms, 80ms);
+        //  Connect the controller.
+        require_player(env.console, context, BUTTON_B);
     }
 
 

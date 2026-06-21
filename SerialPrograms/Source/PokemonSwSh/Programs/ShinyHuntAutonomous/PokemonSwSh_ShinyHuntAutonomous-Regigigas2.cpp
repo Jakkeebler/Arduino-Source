@@ -8,9 +8,10 @@
 #include "CommonFramework/Notifications/ProgramNotifications.h"
 #include "CommonFramework/Tools/ErrorDumper.h"
 #include "CommonTools/Async/InferenceRoutines.h"
+#include "NintendoSwitch/NintendoSwitch_Settings.h"
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_PushButtons.h"
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_Superscalar.h"
-#include "NintendoSwitch/NintendoSwitch_Settings.h"
+#include "NintendoSwitch/Programs/NintendoSwitch_GameEntry.h"
 #include "Pokemon/Pokemon_Strings.h"
 #include "PokemonSwSh/PokemonSwSh_Settings.h"
 #include "PokemonSwSh/Inference/PokemonSwSh_YCommDetector.h"
@@ -80,7 +81,7 @@ bool ShinyHuntAutonomousRegigigas2::kill_and_return(VideoStream& stream, ProCont
 
     while (true){
         RaidCatchWatcher detector(stream.overlay());
-        YCommIconDetector overworld(true);
+        YCommIconWatcher overworld;
         context.wait_for_all_requests();
         int result = wait_until(
             stream, context,
@@ -115,7 +116,8 @@ void ShinyHuntAutonomousRegigigas2::program(SingleSwitchProgramEnvironment& env,
             4000ms
         );
     }else{
-        pbf_press_button(context, BUTTON_B, 40ms, 40ms);
+        //  Connect the controller.
+        require_player(env.console, context, BUTTON_B);
     }
 
     ShinyHuntTracker& stats = env.current_stats<ShinyHuntTracker>();

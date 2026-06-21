@@ -27,7 +27,7 @@ public:
     PybindSwitchProControllerInternal(const std::string& name)
         : m_logger(global_logger_raw(), "Pybind")
         , m_descriptor(name)
-        , m_connection(m_descriptor.open_connection(m_logger, false))
+        , m_connection(m_descriptor.open_connection(m_logger))
     {
         m_connection->add_status_listener(*this);
     }
@@ -50,8 +50,7 @@ public:
         m_controller = m_descriptor.make_controller(
             m_logger,
             connection,
-            connection.current_controller(),
-            ControllerResetMode::DO_NOT_RESET
+            connection.current_controller()
         );
         ProController* procon = dynamic_cast<ProController*>(m_controller.get());
         if (procon == nullptr){

@@ -12,7 +12,7 @@
 #include "Common/Cpp/Exceptions.h"
 #include "Common/Cpp/PrettyPrint.h"
 #include "Common/Cpp/Containers/FixedLimitVector.tpp"
-#include "Common/Cpp/Concurrency/PeriodicScheduler.h"
+#include "Common/Cpp/Concurrency/BusyPeriodicRunner.h"
 #include "CommonFramework/Exceptions/OperationFailedException.h"
 #include "CommonTools/Async/InferenceRoutines.h"
 #include "CommonTools/OCR/OCR_RawOCR.h"
@@ -174,6 +174,7 @@
 #include "CommonTools/Images/ImageTools.h"
 #include "PokemonFRLG/Inference/PokemonFRLG_BattleSelectionArrowDetector.h"
 #include "Controllers/RumbleListener.h"
+#include "PokemonSwSh/Inference/PokemonSwSh_SelectionArrowFinder.h"
 
 
 
@@ -316,12 +317,12 @@ void TestProgram::program(MultiSwitchProgramEnvironment& env, CancellableScope& 
     using namespace OCR;
     using namespace NintendoSwitch;
     using namespace Pokemon;
-//    using namespace PokemonSwSh;
+    using namespace PokemonSwSh;
 //    using namespace PokemonBDSP;
 //    using namespace PokemonLA;
 //    using namespace PokemonSV;
 //    using namespace PokemonLZA;
-    using namespace PokemonFRLG;
+//    using namespace PokemonFRLG;
 
     [[maybe_unused]] Logger& logger = env.logger();
     [[maybe_unused]] ConsoleHandle& console = env.consoles[0];
@@ -333,6 +334,32 @@ void TestProgram::program(MultiSwitchProgramEnvironment& env, CancellableScope& 
     VideoOverlaySet overlays(overlay);
 
 
+//    OperationFailedException::fire(ErrorReport::SEND_ERROR_REPORT, "test", console);
+
+#if 0
+    auto snapshot = feed.snapshot();
+    YCommMenuDetector detector(true);
+    detector.make_overlays(overlays);
+    cout << detector.detect(snapshot) << endl;
+#endif
+
+#if 0
+    SelectionArrowFinder arrow(overlay, {0.462377, 0.332039, 0.388222, 0.640777});
+
+    cout << arrow.detect(snapshot) << endl;
+
+    auto arrows = arrow.last_detection();
+    if (!arrows.empty()){
+        cout << arrows[0].y << endl;
+    }
+#endif
+
+//    WhiteDialogBoxDetector detector;
+//    detector.make_overlays(overlays);
+//    cout << detector.detect(snapshot) << endl;
+
+
+#if 0
     RumbleWatcher<ProController> rumble(context, 200);
     int ret = wait_until(
         console, context,
@@ -344,6 +371,7 @@ void TestProgram::program(MultiSwitchProgramEnvironment& env, CancellableScope& 
     }else{
         cout << "Did not detect anything." << endl;
     }
+#endif
 
 
 #if 0

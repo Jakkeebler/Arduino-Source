@@ -4,8 +4,6 @@
  *
  */
 
-#include <cmath>
-#include "CommonFramework/Exceptions/OperationFailedException.h"
 #include "CommonFramework/ProgramStats/StatsTracking.h"
 #include "CommonFramework/Notifications/ProgramNotifications.h"
 #include "CommonFramework/ProgramStats/StatsTracking.h"
@@ -13,10 +11,9 @@
 #include "Pokemon/Pokemon_Strings.h"
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_PushButtons.h"
 #include "PokemonFRLG/PokemonFRLG_Navigation.h"
-#include "PokemonFRLG_BlindNavigation.h"
 #include "PokemonFRLG_RngNavigation.h"
+#include "PokemonFRLG_RngCalibration.h"
 #include "PokemonFRLG_HardReset.h"
-#include "PokemonFRLG_RngNavigation.h"
 #include "PokemonFRLG_RngHelper.h"
 
 namespace PokemonAutomation{
@@ -54,7 +51,26 @@ std::unique_ptr<StatsTracker> RngHelper_Descriptor::make_stats() const{
 }
 
 RngHelper::RngHelper()
-    : TARGET(
+    : m_game_info(
+        "<font size=4><b>Game Information</b></font>"
+    )
+    , LANGUAGE(
+        "<b>Game Language:</b>",
+        {
+            Language::English,
+            Language::Japanese,
+            Language::Spanish,
+            Language::French,
+            Language::German,
+            Language::Italian,
+        },
+        LockMode::LOCK_WHILE_RUNNING,
+        true
+    )
+    , m_target_settings(
+        "<font size=4><b>Target Settings</b></font> — Get these from an RNG search tool"
+    )
+    , TARGET(
         "<b>Target:</b>",
         {
             {PokemonFRLG_RngTarget::starters, "starters", "Bulbasaur / Squirtle / Charmander"},
@@ -65,10 +81,14 @@ RngHelper::RngHelper()
             {PokemonFRLG_RngTarget::fossils, "fossils", "Omanyte / Kabuto / Aerodactyl"},
             {PokemonFRLG_RngTarget::gamecornerabra, "gamecornerabra", "Game Corner Abra"},
             {PokemonFRLG_RngTarget::gamecornerclefairy, "gamecornerclefairy", "Game Corner Clefairy"},
-            {PokemonFRLG_RngTarget::gamecornerdratini, "gamecornerdratini", "Game Corner Dratini"},
-            {PokemonFRLG_RngTarget::gamecornerbug, "gamecornerbug", "Game Corner Bug (Scyther / Pinsir)"},
+            {PokemonFRLG_RngTarget::gamecornerdratinifr, "gamecornerdratinifr", "Game Corner Dratini (FireRed)"},
+            {PokemonFRLG_RngTarget::gamecornerdratinilg, "gamecornerdratinilg", "Game Corner Dratini (LeafGreen)"},
+            {PokemonFRLG_RngTarget::gamecornerscyther, "gamecornerscyther", "Game Corner Scyther"},
+            {PokemonFRLG_RngTarget::gamecornerpinsir, "gamecornerpinsir", "Game Corner Pinsir"},
             {PokemonFRLG_RngTarget::gamecornerporygon, "gamecornerporygon", "Game Corner Porygon"},
             {PokemonFRLG_RngTarget::togepi, "togepi", "Togepi"},
+            {PokemonFRLG_RngTarget::eggheld, "eggheld", "Daycare Egg Held Frame"},
+            {PokemonFRLG_RngTarget::eggpickup, "eggpickup", "Daycare Egg Pickup"},
             {PokemonFRLG_RngTarget::staticencounter, "staticencounter", "Static Overworld Encounters"},
             {PokemonFRLG_RngTarget::snorlax, "snorlax", "Snorlax"},
             {PokemonFRLG_RngTarget::mewtwo, "mewtwo", "Mewtwo"},
@@ -83,17 +103,11 @@ RngHelper::RngHelper()
             {PokemonFRLG_RngTarget::safarizonewest, "safarizonewest", "Safari Zone West (Sweet Scent)"},
             {PokemonFRLG_RngTarget::safarizonesurf, "safarizonesurf", "Safari Zone Surfing"},
             {PokemonFRLG_RngTarget::safarizonefish, "safarizonefish", "Safari Zone Fishing"},
-            // {PokemonFRLG_RngTarget::roaming, "roaming", "Roaming Legendaries"}
+            {PokemonFRLG_RngTarget::roaming, "roaming", "Roaming Legendaries"}
         },
         LockMode::LOCK_WHILE_RUNNING,
         PokemonFRLG_RngTarget::starters
     )    
-    , NUM_RESETS(
-        "<b>Max Resets:</b><br>"
-        "This program requires manual calibration, so this should usually be set to 1 while calibrating.",
-        LockMode::UNLOCK_WHILE_RUNNING,
-        1, 0 // default, min
-    )
     , SEED_BUTTON(
         "<b>Seed Button:</b><br>"
         "The button to be pressed on the title screen to set the seed.",
@@ -118,9 +132,11 @@ RngHelper::RngHelper()
     )
     , SEED_DELAY(
         "<b>Seed Delay Time (ms):</b><br>"
-        "The delay between starting the game and advancing past the title screen. Set this to match your target seed.",
+        "The delay between starting the game and advancing past the title screen. Set this to match your target seed.<br>"
+        "<i>If using Ten Lines for seed info, select <b>Nintendo Switch 1</b> as your console even if using a Switch 2.</i><br>"
+        "<b><i>Warning: values close to 30500ms can sometimes cause problems, and you may need to increase your seed calibration or pick a new target.</i></b>",
         LockMode::LOCK_WHILE_RUNNING,
-        35000, 30400 // default, min
+        31338, 30400 // default, min
     )
     , SEED_CALIBRATION(
          "<b>Seed Calibration (ms):</b>"
@@ -134,7 +150,7 @@ RngHelper::RngHelper()
         "<br>The number of RNG advances before loading the game.<br>"
         "These pass at the \"normal\" rate compared to other consoles.",
         LockMode::LOCK_WHILE_RUNNING,
-        1000, 192 // default, min
+        200, 192 // default, min
     )
     , CONTINUE_SCREEN_CALIBRATION(
         "<b>Continue Screen Frames Calibration:</b>"
@@ -149,7 +165,7 @@ RngHelper::RngHelper()
         "These pass at double the rate compared to other consoles, where every frame results in 2 advances.<br>"
         "<i>Warning: this needs to be long enough to accomodate all in-game button presses prior to the gift/encounter</i>",
         LockMode::LOCK_WHILE_RUNNING,
-        12345, 480 // default, min
+        9800, 320 // default, min
     )
     , INGAME_CALIBRATION(
         "<b>In-Game Advances Calibration:</b>"
@@ -158,12 +174,21 @@ RngHelper::RngHelper()
         LockMode::UNLOCK_WHILE_RUNNING,
         0 // default
     )
+    , m_program_settings(
+        "<font size=4><b>Program Settings</b></font>"
+    )    
     , USE_TEACHY_TV(
         "<b>Use Teachy TV:</b>"
         "<br>Opens the Teachy TV to quickly advance the RNG at 313x speed.<br>"
         "<i>Warning: can result in larger misses.</i>",
         LockMode::LOCK_WHILE_RUNNING,
         false // default
+    )
+    , NUM_RESETS(
+        "<b>Max Resets:</b><br>"
+        "This program requires manual calibration, so this should usually be set to 1 while calibrating.",
+        LockMode::UNLOCK_WHILE_RUNNING,
+        1, 0 // default, min
     )
     , PROFILE(
         "<b>User Profile Position:</b><br>"
@@ -190,8 +215,10 @@ RngHelper::RngHelper()
         &NOTIFICATION_PROGRAM_FINISH,
     })
 {
+    PA_ADD_OPTION(m_game_info);
+    PA_ADD_OPTION(LANGUAGE);
+    PA_ADD_OPTION(m_target_settings);
     PA_ADD_OPTION(TARGET);
-    PA_ADD_OPTION(NUM_RESETS);
     PA_ADD_OPTION(SEED_BUTTON);
     PA_ADD_OPTION(EXTRA_BUTTON);
     PA_ADD_OPTION(SEED_DELAY);
@@ -200,7 +227,9 @@ RngHelper::RngHelper()
     PA_ADD_OPTION(CONTINUE_SCREEN_CALIBRATION);
     PA_ADD_OPTION(INGAME_ADVANCES);
     PA_ADD_OPTION(INGAME_CALIBRATION);
+    PA_ADD_OPTION(m_program_settings);
     PA_ADD_OPTION(USE_TEACHY_TV);
+    PA_ADD_OPTION(NUM_RESETS);
     PA_ADD_OPTION(PROFILE);
     PA_ADD_OPTION(TAKE_VIDEO);
     PA_ADD_OPTION(GO_HOME_WHEN_DONE);
@@ -218,63 +247,63 @@ void RngHelper::program(SingleSwitchProgramEnvironment& env, ProControllerContex
 
     bool shiny_found = false;
 
-    double FRAMERATE = 59.999977; // FPS
-    double FRAME_DURATION = 1000 / FRAMERATE;
+    bool sweet_scent = (
+        TARGET == PokemonFRLG_RngTarget::sweetscent ||
+        TARGET == PokemonFRLG_RngTarget::rocksmash ||
+        TARGET == PokemonFRLG_RngTarget::safarizonecenter ||
+        TARGET == PokemonFRLG_RngTarget::safarizoneeast ||
+        TARGET == PokemonFRLG_RngTarget::safarizonenorth ||
+        TARGET == PokemonFRLG_RngTarget::safarizonewest ||
+        TARGET == PokemonFRLG_RngTarget::safarizonesurf
+    );
 
-    const int64_t FIXED_SEED_OFFSET = -845; // milliseconds. approximate
+    static const int64_t FIXED_SEED_OFFSET = -845; // milliseconds, approximate
+    const int64_t FIXED_ADVANCES_OFFSET = sweet_scent ? -352 : 160; // frames, approximate
+
+    const bool SAFARI_ZONE = (TARGET == PokemonFRLG_RngTarget::safarizonecenter
+        || TARGET == PokemonFRLG_RngTarget::safarizoneeast
+        || TARGET == PokemonFRLG_RngTarget::safarizonenorth
+        || TARGET == PokemonFRLG_RngTarget::safarizonewest
+        || TARGET == PokemonFRLG_RngTarget::safarizonesurf
+        || TARGET == PokemonFRLG_RngTarget::safarizonefish 
+    );
+    
+    env.log("Target: " + std::to_string(TARGET.current_value()));
+    env.log("Seed Delay: " + std::to_string(SEED_DELAY) + "ms");
+    env.log("Continue Screen Frames: " + std::to_string(CONTINUE_SCREEN_FRAMES) + " frames");
+    env.log("In-game Advances: " + std::to_string(INGAME_ADVANCES) + " advances");
+
+    const RngCalibrations CALIBRATIONS = {
+        static_cast<double>(SEED_CALIBRATION),
+        CONTINUE_SCREEN_CALIBRATION,
+        INGAME_CALIBRATION
+    };
+    env.log("Seed calibration (frames): " + std::to_string(CALIBRATIONS.seed_offset));
+    env.log("CSF calibration (frames): " + std::to_string(CALIBRATIONS.csf_offset));
+    env.log("In-game calibration (frames x2): " + std::to_string(CALIBRATIONS.ingame_offset));
+
+    Milliseconds launch_delay = INITIAL_LAUNCH_DELAY;
 
     while (!shiny_found){
-        // prepare timings
-        uint64_t TOTAL_SEED_DELAY = SEED_DELAY + SEED_CALIBRATION + FIXED_SEED_OFFSET;
-
-        double MODIFIED_INGAME_ADVANCES = INGAME_ADVANCES + INGAME_CALIBRATION;
-        if (MODIFIED_INGAME_ADVANCES < 0) {
-           OperationFailedException::fire(
-                ErrorReport::NO_ERROR_REPORT,
-                "In-game advances cannot be negative. Check your in-game advances and calibration.",
-                env.console
-            ); 
-        }
-        uint64_t TEACHY_ADVANCES = 0;
-
-        const bool SAFARI_ZONE = (TARGET == PokemonFRLG_RngTarget::safarizonecenter
-            || TARGET == PokemonFRLG_RngTarget::safarizoneeast
-            || TARGET == PokemonFRLG_RngTarget::safarizonenorth
-            || TARGET == PokemonFRLG_RngTarget::safarizonewest
-            || TARGET == PokemonFRLG_RngTarget::safarizonesurf
-            || TARGET == PokemonFRLG_RngTarget::safarizonefish 
+        RngTimings timings = prepare_timings(
+            env.console, TARGET,
+            SEED_DELAY, CONTINUE_SCREEN_FRAMES, INGAME_ADVANCES,
+            USE_TEACHY_TV, CALIBRATIONS,
+            FIXED_SEED_OFFSET, FIXED_ADVANCES_OFFSET
         );
-
-        uint64_t TEACHY_TV_BUFFER = SAFARI_ZONE ? 12000 : 5000; // Safari zone targets need extra time to walk to the right position
-
-        bool should_use_teachy_tv = USE_TEACHY_TV && (TARGET != PokemonFRLG_RngTarget::starters) && (MODIFIED_INGAME_ADVANCES > TEACHY_TV_BUFFER); // don't use Teachy TV for short in-game advance targets
-        if (should_use_teachy_tv) {
-            TEACHY_ADVANCES = uint64_t((int)std::floor((MODIFIED_INGAME_ADVANCES - TEACHY_TV_BUFFER) / 313) * 313);
-        }
-
-        const uint64_t CONTINUE_SCREEN_DELAY = uint64_t((CONTINUE_SCREEN_FRAMES + CONTINUE_SCREEN_CALIBRATION) * FRAME_DURATION);
-        const uint64_t TEACHY_DELAY = uint64_t(TEACHY_ADVANCES * FRAME_DURATION / 313);
-        const uint64_t INGAME_DELAY = uint64_t((MODIFIED_INGAME_ADVANCES - TEACHY_ADVANCES) * FRAME_DURATION / 2) - (should_use_teachy_tv ? 13700 : 0);
-        env.log("Continue Screen delay: " + std::to_string(CONTINUE_SCREEN_DELAY) + "ms");
-        env.log("In-game delay: " + std::to_string(INGAME_DELAY) + "ms");
-        env.log("Teachy TV delay: " + std::to_string(TEACHY_DELAY) + "ms");
-        env.log("Total time: " + std::to_string(TOTAL_SEED_DELAY + CONTINUE_SCREEN_DELAY + INGAME_DELAY + TEACHY_DELAY) + "ms");
-
-        check_timings(env.console, TARGET, TOTAL_SEED_DELAY, CONTINUE_SCREEN_DELAY, INGAME_DELAY, SAFARI_ZONE);
-
         
         // handle the blind part
         reset_and_perform_blind_sequence(
             env.console, context, TARGET, 
-            SEED_BUTTON, EXTRA_BUTTON, TOTAL_SEED_DELAY, 
-            CONTINUE_SCREEN_DELAY, TEACHY_DELAY, INGAME_DELAY, 
+            SEED_BUTTON, EXTRA_BUTTON, 
+            timings, launch_delay,
             SAFARI_ZONE, PROFILE
         );
         env.log("Blind button presses complete.");
         stats.resets++;
 
         // detect shinies
-        shiny_found = check_for_shiny(env.console, context, TARGET);
+        shiny_found = check_for_shiny(env.console, context, TARGET, LANGUAGE);
         if (shiny_found){
             env.log("Shiny found!");
             stats.shinies++;

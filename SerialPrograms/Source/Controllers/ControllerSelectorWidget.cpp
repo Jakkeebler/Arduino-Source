@@ -6,6 +6,7 @@
 
 #include <QKeyEvent>
 #include <QHBoxLayout>
+#include <QMessageBox>
 #include "Common/Qt/NoWheelComboBox.h"
 #include "CommonFramework/Globals.h"
 #include "CommonFramework/GlobalSettingsPanel.h"
@@ -47,8 +48,8 @@ ControllerSelectorWidget::ControllerSelectorWidget(QWidget& parent, ControllerSe
     layout1->addLayout(m_dropdowns, CONSOLE_SETTINGS_STRETCH_L1_BODY);
     layout1->addSpacing(5);
 
-    interface_dropdown = new NoWheelCompactComboBox(this);
-    m_dropdowns->addWidget(interface_dropdown);
+    m_interface_dropdown = new NoWheelCompactComboBox(this);
+    m_dropdowns->addWidget(m_interface_dropdown);
 
 
     //  Add all the supported interfaces.
@@ -61,10 +62,10 @@ ControllerSelectorWidget::ControllerSelectorWidget(QWidget& parent, ControllerSe
 
 
     for (ControllerInterface item : m_interface_list){
-        interface_dropdown->addItem(QString::fromStdString(CONTROLLER_INTERFACE_STRINGS.get_string(item)));
+        m_interface_dropdown->addItem(QString::fromStdString(CONTROLLER_INTERFACE_STRINGS.get_string(item)));
     }
 
-//    interface_dropdown->setHidden(true);
+//    m_interface_dropdown->setHidden(true);
 
     auto current = session.descriptor();
     if (current == nullptr || current->interface_type == ControllerInterface::None){
@@ -110,7 +111,7 @@ ControllerSelectorWidget::ControllerSelectorWidget(QWidget& parent, ControllerSe
     setFocusPolicy(Qt::StrongFocus);
 
     connect(
-        interface_dropdown, static_cast<void(QComboBox::*)(int)>(&QComboBox::activated),
+        m_interface_dropdown, static_cast<void(QComboBox::*)(int)>(&QComboBox::activated),
         this, [this](int index){
             index = std::max(index, 0);
 //            index = std::min(index, (int)m_device_list.size() - 1);
@@ -134,10 +135,42 @@ ControllerSelectorWidget::ControllerSelectorWidget(QWidget& parent, ControllerSe
                 m_controllers_dropdown->itemText(index).toStdString(),
                 ControllerType::None
             );
-            if (new_value == m_session.controller_type()){
+            ControllerType previous_controller = m_session.controller_type();
+            if (new_value == previous_controller){
                 return;
             }
-            m_session.set_controller(new_value);
+
+            if (previous_controller != ControllerType::NintendoSwitch_WiredProController &&
+                previous_controller != ControllerType::NintendoSwitch2_WiredProController
+            ){
+                m_session.set_controller(new_value);
+                return;
+            }
+
+            if (new_value != ControllerType::NintendoSwitch_WiredController &&
+                new_value != ControllerType::NintendoSwitch2_WiredController
+            ){
+                m_session.set_controller(new_value);
+                return;
+            }
+
+            QMessageBox box;
+            QMessageBox::StandardButton reply = box.warning(
+                this,
+                "Warning",
+                "You are attempting to change from a Pro Controller to a 3rd party wired controller.<br><br>"
+                "Are you sure you wish to do this?<br><br>"
+                "If you are doing this because our YouTube video is telling you to do this, STOP. "
+                "That video is out of date.<br><br>"
+                "Since that video was made, we have added support for the Pro Controller which "
+                "supports many more features. You should not need to use the 3rd party wired controllers anymore.",
+                QMessageBox::Yes | QMessageBox::Cancel
+            );
+            if (reply == QMessageBox::Yes){
+                m_session.set_controller(new_value);
+            }else{
+                refresh_controllers(previous_controller, m_session.available_controllers());
+            }
         }
     );
     connect(
@@ -159,7 +192,7 @@ void ControllerSelectorWidget::update_interface_dropdown(ControllerInterface int
     }
     for (size_t index = 0; index < m_interface_list.size(); index++){
         if (interface_type == m_interface_list[index]){
-            interface_dropdown->setCurrentIndex((int)index);
+            m_interface_dropdown->setCurrentIndex((int)index);
             break;
         }
     }
@@ -247,7 +280,7 @@ void ControllerSelectorWidget::post_status_text_changed(const std::string& text)
 void ControllerSelectorWidget::options_locked(bool locked){
     QMetaObject::invokeMethod(this, [this, locked]{
         m_selector->setEnabled(!locked);
-        interface_dropdown->setEnabled(!locked);
+        m_interface_dropdown->setEnabled(!locked);
         m_controllers_dropdown->setEnabled(!locked);
         m_reset_button->setEnabled(!locked);
     });

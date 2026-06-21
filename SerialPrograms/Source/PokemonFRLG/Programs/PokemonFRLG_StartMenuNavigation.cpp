@@ -36,6 +36,7 @@ void open_start_menu(ConsoleHandle& console, ProControllerContext& context){
         int ret = run_until<ProControllerContext>(
             console, context,
             [](ProControllerContext& context){
+                pbf_wait(context, 500ms);
                 pbf_press_button(context, BUTTON_PLUS, 200ms, 1800ms);
             },
             { start_menu }
@@ -130,6 +131,16 @@ bool move_cursor_to_position(ConsoleHandle& console, ProControllerContext& conte
         MENU_ARROW_BOX,
         SAFARI_START_MENU_OPTION_COUNT,
         [](int i){ return SelectionArrowDetector::arrow_box_for_position(static_cast<SelectionArrowPositionSafariMenu>(i)); },
+        static_cast<int>(destination)
+    );
+}
+
+bool move_cursor_to_position(ConsoleHandle& console, ProControllerContext& context, SelectionArrowPositionNoDexMenu destination){
+    return move_cursor_impl(
+        console, context,
+        MENU_ARROW_BOX,
+        NO_DEX_START_MENU_OPTION_COUNT,
+        [](int i){ return SelectionArrowDetector::arrow_box_for_position(static_cast<SelectionArrowPositionNoDexMenu>(i)); },
         static_cast<int>(destination)
     );
 }

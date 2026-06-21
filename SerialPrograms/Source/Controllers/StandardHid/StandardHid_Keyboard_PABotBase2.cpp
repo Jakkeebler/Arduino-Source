@@ -4,6 +4,7 @@
  *
  */
 
+#include "Common/SerialPABotBase/SerialPABotBase_Protocol_IDs.h"
 #include "Common/PABotBase2/Controllers/PABotBase2_Controller_HID_Keyboard.h"
 #include "CommonFramework/Options/Environment/ThemeSelectorOption.h"
 #include "StandardHid_Keyboard_PABotBase2.h"
@@ -15,18 +16,10 @@ using namespace std::chrono_literals;
 
 
 
-PABotBase2_Keyboard::PABotBase2_Keyboard(
-    Logger& logger,
-    PABotBase2::Connection& connection
-)
-    : Keyboard(logger)
-    , KeyboardControllerWithScheduler(logger)
-        , m_connection(connection)
-{
+void PABotBase2_Keyboard::add_message_loggers(PABotBase2::MessageLogger& message_logger){
     using namespace PABotBase2;
 
-    //  Add controller-specific messages.
-    connection.message_logger().add_message<pabb2_Message_Command_HID_Keyboard_State>(
+    message_logger.add_message<pabb2_Message_Command_HID_Keyboard_State>(
         "PABB2_MESSAGE_CMD_HID_KEYBOARD_STATE",
         PABB2_MESSAGE_CMD_HID_KEYBOARD_STATE,
         false,
@@ -37,6 +30,20 @@ PABotBase2_Keyboard::PABotBase2_Keyboard(
             return str;
         }
     );
+}
+
+
+
+PABotBase2_Keyboard::PABotBase2_Keyboard(
+    Logger& logger,
+    PABotBase2::Connection& connection
+)
+    : Keyboard(logger)
+    , KeyboardControllerWithScheduler(logger, logging_throttler())
+    , m_connection(connection)
+{
+    //  Add controller-specific messages.
+    add_message_loggers(connection.message_logger());
 
     m_status_thread.reset(new ControllerStatusThread(
         connection, *this
@@ -55,25 +62,43 @@ void PABotBase2_Keyboard::update_status(Cancellable& cancellable){
     PABotBase2::MessageHeader request;
     request.message_bytes = sizeof(request);
     request.opcode = PABB2_MESSAGE_OPCODE_REQUEST_STATUS;
-    uint8_t id = m_connection.device().send_request_with_response(request);
-    PABotBase2::Message_u32 response;
-    m_connection.device().wait_for_request_response<PABotBase2::Message_u32, PABB2_MESSAGE_OPCODE_RET_U32>(
-        response, id
-    );
 
-    uint32_t status = response.data;
-    bool status_connected = status & 1;
-    bool status_ready     = status & 2;
+    uint8_t id = m_connection.device().send_request_with_response(request);
+    std::string response = m_connection.device().wait_for_request_response_min_size<
+        PABotBase2::Message_u32, PABB2_MESSAGE_OPCODE_RET_U32_DATA
+    >(id);
+
+    const PABotBase2::Message_u32* header = (const PABotBase2::Message_u32*)response.data();
+
+    if (header->data != PABB_CID_StandardHid_Keyboard){
+        m_connection.set_status_line1("");
+        return;
+    }
+
+    constexpr size_t EXPECTED_SIZE = sizeof(PABotBase2::Message_u32) + sizeof(pabb_HID_Keyboard_Status);
+    if (response.size() != EXPECTED_SIZE){
+        throw SerialProtocolException(
+            m_logger, PA_CURRENT_FUNCTION,
+            "Received Incorrect Response Size: Expected = " + std::to_string(EXPECTED_SIZE) +
+            ", Actual = " + std::to_string(response.size())
+        );
+    }
+
+    uint8_t status = *(const uint8_t*)(header + 1);
 
     std::string str;
-    str += "Connected: " + (status_connected
+    str += "Connected: " + (status & 1
         ? html_color_text("Yes", theme_friendly_darkblue())
         : html_color_text("No", COLOR_RED)
     );
-    str += " - Ready: " + (status_ready
-        ? html_color_text("Yes", theme_friendly_darkblue())
-        : html_color_text("No", COLOR_RED)
-    );
+    str += " -";
+    if (status & 1){
+        str += html_color_text(" NUM", status & 16 ? COLOR_GREEN : COLOR_BLACK);
+        str += html_color_text(" CAPS", status & 32 ? COLOR_GREEN : COLOR_BLACK);
+        str += html_color_text(" SCR", status & 64 ? COLOR_GREEN : COLOR_BLACK);
+    }else{
+        str += " " + html_color_text("No", COLOR_RED);
+    }
 
     m_connection.set_status_line1(str);
 }

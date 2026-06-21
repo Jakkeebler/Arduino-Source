@@ -29,6 +29,8 @@
 #include "Programs/RngManipulation/PokemonFRLG_WildRng.h"
 #include "Programs/TestPrograms/PokemonFRLG_KantoMapPositionTest.h"
 #include "Programs/TestPrograms/PokemonFRLG_MappingMode.h"
+#include "Programs/RngManipulation/PokemonFRLG_RoamingLegendaryRng.h"
+#include "Programs/RngManipulation/PokemonFRLG_EggRng.h"
 #include "Programs/TestPrograms/PokemonFRLG_SoundListener.h"
 #include "Programs/TestPrograms/PokemonFRLG_ReadStats.h"
 #include "Programs/TestPrograms/PokemonFRLG_ReadBattleLevelUp.h"
@@ -74,14 +76,16 @@ std::vector<PanelEntry> PanelListFactory::make_panels() const{
 
     ret.emplace_back("---- RNG Manipulation  ----");
     ret.emplace_back(make_single_switch_program<RngHelper_Descriptor, RngHelper>());
+    ret.emplace_back(make_single_switch_program<SidHelper_Descriptor, SidHelper>());
+    ret.emplace_back(make_single_switch_program<StarterRng_Descriptor, StarterRng>());
+    ret.emplace_back(make_single_switch_program<GiftRng_Descriptor, GiftRng>());
+    ret.emplace_back(make_single_switch_program<StaticRng_Descriptor, StaticRng>());
+    ret.emplace_back(make_single_switch_program<WildRng_Descriptor, WildRng>());
 
     if (IS_BETA_VERSION || PreloadSettings::instance().DEVELOPER_MODE){
         ret.emplace_back("---- Untested/Beta/WIP ----");
-        ret.emplace_back(make_single_switch_program<SidHelper_Descriptor, SidHelper>());
-        ret.emplace_back(make_single_switch_program<StarterRng_Descriptor, StarterRng>());
-        ret.emplace_back(make_single_switch_program<GiftRng_Descriptor, GiftRng>());
-        ret.emplace_back(make_single_switch_program<StaticRng_Descriptor, StaticRng>());
-        ret.emplace_back(make_single_switch_program<WildRng_Descriptor, WildRng>());
+        ret.emplace_back(make_single_switch_program<RoamingLegendaryRng_Descriptor, RoamingLegendaryRng>());
+        ret.emplace_back(make_single_switch_program<EggRng_Descriptor, EggRng>());
     }
 
     ret.emplace_back("---- Tools ----");

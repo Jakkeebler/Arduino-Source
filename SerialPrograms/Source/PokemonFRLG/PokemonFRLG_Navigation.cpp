@@ -17,6 +17,7 @@
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_Superscalar.h"
 #include "NintendoSwitch/Controllers/Procon/NintendoSwitch_ProController.h"
 #include "NintendoSwitch/NintendoSwitch_ConsoleHandle.h"
+#include "NintendoSwitch/Inference/NintendoSwitch_HomeMenuDetector.h"
 #include "Pokemon/Pokemon_Strings.h"
 #include "PokemonFRLG/PokemonFRLG_Settings.h"
 #include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_DialogDetector.h"
@@ -40,6 +41,60 @@
 namespace PokemonAutomation{
 namespace NintendoSwitch{
 namespace PokemonFRLG{
+
+
+void home_black_border_check(ConsoleHandle& console, ProControllerContext& context){
+    if (GameSettings::instance().DEVICE == GameSettings::Device::switch_1_2){
+        console.log("Switch 1 or 2 selected in Settings.");
+
+        console.log("Checking for min 720p and 16:9.");
+        assert_16_9_720p_min(console, console);
+
+        console.log("Going to home to check for black border.");
+
+        //  Connect the controller.
+        require_player(console, context, BUTTON_ZL);
+
+        pbf_press_button(context, BUTTON_HOME, 120ms, 880ms);
+        try{
+            ensure_at_home(console, context, 2);
+        }catch (OperationFailedException&){
+            ControllerPlayerNumber current = context->get_player_number(context);
+            if (current == ControllerPlayerNumber::UNKNOWN){
+                throw UserSetupError(
+                    console,
+                    "Unable to find Home menu.\n\n"
+                    "Either your controller isn't connected or your screen size to not "
+                    "set to 100% in the TV Settings on your Nintendo Switch.\n\n"
+                    "If your Switch entered the Home screen and re-entered the game, then your "
+                    "controller is connected but your screen size is not set to 100%.\n\n"
+                    "If nothing happened at all, then your controller is not connected. "
+                    "Please disconnect all other controllers and try again.\n\n"
+                    "We recommend changing the controller to \"NS1: Wired Pro Controller\" "
+                    "as that will be able self-diagnose controller connection issues."
+                );
+            }else{
+                throw UserSetupError(
+                    console,
+                    "Unable to find Home menu.\n\n"
+                    "It is likely your screen size to not set to 100% in the TV Settings on your Nintendo Switch."
+                );
+            }
+        }
+
+//        context.wait_for_all_requests();
+        StartProgramChecks::check_border(console);
+        console.log("Returning to game.");
+        resume_game_from_home(console, context);
+        context.wait_for_all_requests();
+        console.log("Entered game.");
+    }else{
+        console.log("Non-Switch device selected in Settings.");
+        console.log("Skipping black border check.", COLOR_BLUE);
+    }
+}
+
+
 
 
 bool try_soft_reset(ConsoleHandle& console, ProControllerContext& context){
@@ -802,6 +857,8 @@ void open_party_menu_from_overworld(ConsoleHandle& console, ProControllerContext
         case 0:
             if (menu_context == StartMenuContext::SAFARI_ZONE){
                 ret = move_cursor_to_position(console, context, SelectionArrowPositionSafariMenu::POKEMON);
+            } else if (menu_context == StartMenuContext::NO_DEX){
+                ret = move_cursor_to_position(console, context, SelectionArrowPositionNoDexMenu::POKEMON);
             } else {
                 ret = move_cursor_to_position(console, context, SelectionArrowPositionStartMenu::POKEMON);
             }
@@ -861,6 +918,8 @@ void open_bag_from_overworld(ConsoleHandle& console, ProControllerContext& conte
         case 0:
             if (menu_context == StartMenuContext::SAFARI_ZONE){
                 ret = move_cursor_to_position(console, context, SelectionArrowPositionSafariMenu::BAG);
+            } else if (menu_context == StartMenuContext::NO_DEX){
+                ret = move_cursor_to_position(console, context, SelectionArrowPositionNoDexMenu::BAG);
             } else {
                 ret = move_cursor_to_position(console, context, SelectionArrowPositionStartMenu::BAG);
             }
@@ -887,6 +946,53 @@ void open_bag_from_overworld(ConsoleHandle& console, ProControllerContext& conte
             start_menu_is_open = false;
             continue;
         }
+    }
+}
+
+void use_sweet_scent_from_overworld(ConsoleHandle& console, ProControllerContext& context, int from_last){
+    uint16_t errors = 0;
+    
+    while (true){
+        if (errors > 5){
+            OperationFailedException::fire(
+                ErrorReport::SEND_ERROR_REPORT,
+                "use_teleport_from_overworld(): Failed to use Teleport 5 times in a row.",
+                console
+            );
+        }
+
+        open_party_menu_from_overworld(console, context);
+        // navigate to last party slot
+        for (int i=0; i<(2+from_last); i++){
+            pbf_move_left_joystick(context, {0, +1}, 200ms, 300ms);
+        }
+
+        PartySelectionWatcher sweetscent_selected(COLOR_RED);
+
+        context.wait_for_all_requests();
+        int ret = run_until<ProControllerContext>(
+            console, context,
+            [](ProControllerContext& context){
+                pbf_press_button(context, BUTTON_A, 200ms, 1800ms);
+            },
+            { sweetscent_selected }
+        );
+
+        if (ret < 0){
+            console.log("Failed to select Sweet Scent user.");
+            errors++;
+            pbf_mash_button(context, BUTTON_B, 3000ms);
+            continue;
+        }
+        
+        // select Sweet Scent (2nd option, but maybe HMs could change this)
+        pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+        pbf_press_button(context, BUTTON_A, 200ms, 1800ms);
+        pbf_press_button(context, BUTTON_A, 200ms, 800ms);
+
+        context.wait_for_all_requests();
+        console.log("Used Sweet Scent.");
+        return;
     }
 }
 
@@ -1028,7 +1134,7 @@ void fly_from_kanto_map(ConsoleHandle& console, ProControllerContext& context, K
         // blindly move the cursor to the specified fly spot
         switch (destination){
         case KantoFlyLocation::pallettown:
-            pbf_move_left_joystick(context, {0, -1}, 850ms, 100ms);
+            pbf_move_left_joystick(context, {0, -1}, 900ms, 100ms);
             pbf_move_left_joystick(context, {+1, 0}, 317ms, 100ms);
             break;
         case KantoFlyLocation::viridiancity:
@@ -1228,28 +1334,6 @@ int grass_spin(ConsoleHandle& console, ProControllerContext& context, bool leftr
 
     bool encounter_shiny = handle_encounter(console, context, true);
     return encounter_shiny ? 1 : 0;
-}
-
-void home_black_border_check(ConsoleHandle& console, ProControllerContext& context){
-    if (GameSettings::instance().DEVICE == GameSettings::Device::switch_1_2){
-        console.log("Switch 1 or 2 selected in Settings.");
-
-        console.log("Checking for min 720p and 16:9.");
-        assert_16_9_720p_min(console, console);
-
-        console.log("Going to home to check for black border.");
-        pbf_press_button(context, BUTTON_ZL, 120ms, 880ms); //  Connect the controller.
-        pbf_press_button(context, BUTTON_HOME, 120ms, 880ms);
-        context.wait_for_all_requests();
-        StartProgramChecks::check_border(console);
-        console.log("Returning to game.");
-        resume_game_from_home(console, context);
-        context.wait_for_all_requests();
-        console.log("Entered game.");
-    }else{
-        console.log("Non-Switch device selected in Settings.");
-        console.log("Skipping black border check.", COLOR_BLUE);
-    }
 }
 
 

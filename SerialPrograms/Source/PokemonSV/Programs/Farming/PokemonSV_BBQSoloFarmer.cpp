@@ -4,6 +4,7 @@
  *
  */
 
+#include "Common/Cpp/Exceptions.h"
 #include "CommonFramework/Notifications/ProgramNotifications.h"
 #include "CommonFramework/ProgramStats/StatsTracking.h"
 #include "CommonTools/StartupChecks/StartProgramChecks.h"
@@ -79,6 +80,9 @@ void BBQSoloFarmer::program(SingleSwitchProgramEnvironment& env, ProControllerCo
     if (env.console.state().console_type() == ConsoleType::Unknown){
         throw UserSetupError(env.console, "Console Type (Switch 1 or 2) must be specified.");
     }
+
+    //  Connect the controller.
+    require_player(env.console, context, BUTTON_LCLICK);
     
     //Fly to plaza
     open_map_from_overworld(env.program_info(), env.console, context);

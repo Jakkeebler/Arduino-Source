@@ -211,7 +211,7 @@ void PickupFarmer::program(SingleSwitchProgramEnvironment& env, ProControllerCon
                 default:
                 OperationFailedException::fire(
                     ErrorReport::SEND_ERROR_REPORT,
-                    "Option not yet implemented.",
+                    "Travel option not recognized. Please report this as a bug.",
                     env.console
                 );
                 }
@@ -229,7 +229,7 @@ void PickupFarmer::program(SingleSwitchProgramEnvironment& env, ProControllerCon
                 default:
                     OperationFailedException::fire(
                         ErrorReport::SEND_ERROR_REPORT,
-                        "Option not yet implemented.",
+                        "Game location not recognized. Please report this as a bug.",
                         env.console
                     );
                 }

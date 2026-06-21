@@ -48,6 +48,7 @@ const std::set<std::string> TOKENS{
     "e8d168bc482e96553ea9f9ecaea5a817474dbccc2a6a228a6bde67f2b2aa2889", //  James' token.
     "7555b7c63481cad42306718c67e7f9def5bfd1da8f6cd299ccd3d7dc95f307ae", //  Kuro's token.
     "3d475b46d121fc24559d100de2426feaa53cd6578aac2817c4857a610ccde2dd", //  kichi's token.
+    "9b41db8175b5f248a78e738c7bd63a36e33b57953cb4e80ccdd13c2a7e892eec", //  Dalton's token.
 };
 
 
@@ -144,6 +145,12 @@ GlobalSettings::GlobalSettings()
         "Use PaddleOCR instead of Tesseract for OCR.",
         LockMode::UNLOCK_WHILE_RUNNING,
         false
+    )
+    , USE_GPU_FOR_ML_INFERENCE(
+        "<b>Use GPU for Machine learning inference:</b><br>"
+        "Use the GPU by default for machine learning. Will fall-back to CPU if using the GPU fails.",
+        LockMode::UNLOCK_WHILE_RUNNING,
+        true
     )
     , WINDOW_SIZE(
         CONSTRUCT_TOKEN,
@@ -260,6 +267,7 @@ GlobalSettings::GlobalSettings()
     PA_ADD_OPTION(TEMP_FOLDER);
     PA_ADD_OPTION(THEME);
     PA_ADD_OPTION(USE_PADDLE_OCR);
+    PA_ADD_OPTION(USE_GPU_FOR_ML_INFERENCE);
     PA_ADD_OPTION(WINDOW_SIZE);
     PA_ADD_OPTION(LOG_WINDOW_SIZE);
     PA_ADD_OPTION(LOG_WINDOW_STARTUP);
@@ -447,8 +455,6 @@ void GlobalSettings::on_press(){
 
 
 
-
-PanelDescriptorWrapper<GlobalSettings_Descriptor, GlobalSettingsPanel> GlobalSettings_Descriptor::INSTANCE;
 
 GlobalSettings_Descriptor::GlobalSettings_Descriptor()
     : PanelDescriptor(

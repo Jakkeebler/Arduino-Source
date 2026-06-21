@@ -7,6 +7,7 @@
 #ifndef PokemonAutomation_PokemonFRLG_BlindNavigation_H
 #define PokemonAutomation_PokemonFRLG_BlindNavigation_H
 
+#include "CommonFramework/Language.h"
 #include "NintendoSwitch/Controllers/Procon/NintendoSwitch_ProController.h"
 #include "NintendoSwitch/NintendoSwitch_ConsoleState.h"
 
@@ -32,12 +33,14 @@ namespace PokemonFRLG{
         aerodactyl,
         gamecornerabra,
         gamecornerclefairy,
-        gamecornerdratini,
-        gamecornerbug,
+        gamecornerdratinifr,
+        gamecornerdratinilg,
         gamecornerscyther,
         gamecornerpinsir,
         gamecornerporygon,
         togepi,
+        eggheld,
+        eggpickup,
         electrode,
         articuno,
         zapdos,
@@ -59,7 +62,10 @@ namespace PokemonFRLG{
         safarizonewest,
         safarizonesurf,
         safarizonefish,
-        // roaming
+        raikou,
+        entei,
+        suicune,
+        roaming
     };
 
     enum class SeedButton{
@@ -74,28 +80,31 @@ namespace PokemonFRLG{
         R
     };
 
+    struct RngTimings{
+        uint64_t seed_delay;
+        uint64_t csf_delay;
+        uint64_t teachy_delay;
+        uint64_t ingame_delay;
+    };
+
+
     // checks seed, continue screen, and in-game timings for the specificed RNG manipulation target
     // and fires an error if any of the timings are too short.
     void check_timings(
         ConsoleHandle& console, 
-        PokemonFRLG_RngTarget TARGET,
-        uint64_t SEED_DELAY,
-        uint64_t CONTINUE_SCREEN_DELAY, 
-        uint64_t INGAME_DELAY,
-        bool SAFARI_ZONE
+        const PokemonFRLG_RngTarget& TARGET,
+        const RngTimings& timings,
+        bool safari_zone
     );
 
     // performs the blind sequence between launching the game and arriving at the RNG manipulation target
     void perform_blind_sequence(
         ProControllerContext& context, 
-        PokemonFRLG_RngTarget TARGET,
-        SeedButton SEED_BUTTON,
-        BlackoutButton BLACKOUT_BUTTON,
-        uint64_t SEED_DELAY,
-        uint64_t CONTINUE_SCREEN_DELAY, 
-        uint64_t TEACHY_DELAY, 
-        uint64_t INGAME_DELAY, 
-        bool SAFARI_ZONE,
+        PokemonFRLG_RngTarget target,
+        const SeedButton& seed_button,
+        const BlackoutButton& extra_button,
+        const RngTimings& timings,
+        bool safari_zone,
         ConsoleType console_type
     );
 

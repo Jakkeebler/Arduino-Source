@@ -21,6 +21,9 @@ namespace NintendoSwitch{
     using ProControllerContext = ControllerContext<ProController>;
 namespace PokemonFRLG{
 
+using namespace std::chrono_literals;
+
+
 enum class BattleResult{
     opponentfainted,
     playerfainted,
@@ -113,7 +116,8 @@ WildBattleExit exit_wild_battle(
 // Starting from the start menu, a sub-screen of the start menu, or the overworld, navigate to the party screen
 enum class StartMenuContext {
     STANDARD,
-    SAFARI_ZONE
+    SAFARI_ZONE,
+    NO_DEX,
 };
 void open_party_menu_from_overworld(ConsoleHandle& console, ProControllerContext& context, StartMenuContext menu_context = StartMenuContext::STANDARD);
 
@@ -128,6 +132,10 @@ void select_forced_switch_slot(ConsoleHandle& console, ProControllerContext& con
 
 // Starting from the start menu, a sub-screen of the start menu, or the overworld, navigate to the bag
 void open_bag_from_overworld(ConsoleHandle& console, ProControllerContext& context, StartMenuContext menu_context = StartMenuContext::STANDARD);
+
+// Uses Sweet Scent, assuming that the specified party member has it learned
+// The last argument is the distance of the Sweet Scent user from the last party slot
+void use_sweet_scent_from_overworld(ConsoleHandle& console, ProControllerContext& context, int from_last = 0);
 
 // Uses Teleport to return to a PokeCenter. 
 // Assumes that Teleport is usable and the last party member has it learned

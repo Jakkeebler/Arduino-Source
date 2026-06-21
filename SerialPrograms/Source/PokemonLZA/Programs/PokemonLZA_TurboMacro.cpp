@@ -5,6 +5,7 @@
  */
 
 
+#include "Common/Cpp/Exceptions.h"
 #include "CommonTools/Async/InferenceRoutines.h"
 #include "PokemonLA/Inference/Sounds/PokemonLA_ShinySoundDetector.h"
 #include "PokemonLZA/Options/PokemonLZA_ShinyDetectedAction.h"
@@ -58,7 +59,7 @@ std::unique_ptr<StatsTracker> LZA_TurboMacro_Descriptor::make_stats() const{
 
 LZA_TurboMacro::LZA_TurboMacro()
     : LOOP(
-        "<b>Number of times to loop:</b>",
+        "<b>Number of times to loop:</b><br>(Set to zero to loop forever.)",
         LockMode::UNLOCK_WHILE_RUNNING,
         100, 0
     )
@@ -91,6 +92,9 @@ LZA_TurboMacro::LZA_TurboMacro()
 void LZA_TurboMacro::program(SingleSwitchProgramEnvironment& env, CancellableScope& scope){
     ProControllerContext context(scope, env.console.controller<ProController>());
 
+    //  Connect the controller.
+    require_player(env.console, context, BUTTON_NONE);
+
     switch (RUN_UNTIL_CALLBACK){
     case RunUntilCallback::NONE:
         run_table(env, scope);
@@ -99,7 +103,10 @@ void LZA_TurboMacro::program(SingleSwitchProgramEnvironment& env, CancellableSco
         run_table_stop_when_shiny_sound(env, scope);
         break;
     default:
-        throw InternalProgramError(nullptr, PA_CURRENT_FUNCTION, "TurboMacro::program(): Unknown RunUntilCallback");
+        throw InternalProgramError(
+            &env.logger(), PA_CURRENT_FUNCTION,
+            "TurboMacro::program(): Unknown RunUntilCallback"
+        );
         
     }
 
@@ -113,7 +120,7 @@ void LZA_TurboMacro::program(SingleSwitchProgramEnvironment& env, CancellableSco
 void LZA_TurboMacro::run_table(SingleSwitchProgramEnvironment& env, CancellableScope& scope){
     LZA_TurboMacro_Descriptor::Stats& stats =
         env.current_stats<LZA_TurboMacro_Descriptor::Stats>();
-    for (uint32_t c = 0; c < LOOP; c++){
+    for (uint32_t c = 0; c < LOOP || LOOP == 0; c++){
         TABLE.run(scope, env.console.controller());
         stats.loops++;
         env.update_stats();

@@ -14,6 +14,7 @@
 #include "CommonFramework/VideoPipeline/VideoOverlay.h"
 #include "CommonTools/Async/InferenceRoutines.h"
 #include "NintendoSwitch/NintendoSwitch_Settings.h"
+#include "NintendoSwitch/Programs/NintendoSwitch_GameEntry.h"
 #include "Pokemon/Pokemon_Notification.h"
 #include "Pokemon/Pokemon_Strings.h"
 #include "PokemonSwSh/Commands/PokemonSwSh_Commands_DateSpam.h"
@@ -207,7 +208,8 @@ void EggAutonomous::program(SingleSwitchProgramEnvironment& env, ProControllerCo
             3200ms
         );
     }else{
-        pbf_press_button(context, BUTTON_B, 40ms, 40ms);
+        //  Connect the controller.
+        require_player(env.console, context, BUTTON_B);
     }
 
     if (DEBUG_PROCESSING_HATCHED){ // only for debugging
@@ -318,7 +320,7 @@ bool EggAutonomous::run_batch(
     while (num_eggs_hatched < 5 || m_num_eggs_retrieved < 5){
         // Detect when Y-Comm icon disappears. This is the time an egg is hatching
         const bool y_comm_visible_when_egg_hatching = false;
-        YCommIconDetector egg_hatching_detector(y_comm_visible_when_egg_hatching);
+        YCommIconWatcher egg_hatching_detector(COLOR_RED, y_comm_visible_when_egg_hatching);
 
         bool restart_bike_loop = false;
         for (size_t i_bike_loop = 0; i_bike_loop < this->LOOPS_PER_FETCH && bike_loop_count < MAX_BIKE_LOOP_COUNT;){
@@ -491,7 +493,7 @@ void EggAutonomous::wait_for_egg_hatched(
 ){
     env.console.overlay().add_log("Egg hatching " + std::to_string(num_hatched_eggs) + "/5", COLOR_GREEN);
     const bool y_comm_visible_at_end_of_egg_hatching = true;
-    YCommIconDetector end_egg_hatching_detector(y_comm_visible_at_end_of_egg_hatching);
+    YCommIconWatcher end_egg_hatching_detector(COLOR_RED, y_comm_visible_at_end_of_egg_hatching);
     const int ret = run_until<ProControllerContext>(
         env.console, context,
         [](ProControllerContext& context){
@@ -536,7 +538,7 @@ size_t EggAutonomous::talk_to_lady_to_fetch_egg(
     );
     
     const bool y_comm_visible_at_end_of_dialog = true;
-    YCommIconDetector dialog_over_detector(y_comm_visible_at_end_of_dialog);
+    YCommIconWatcher dialog_over_detector(COLOR_RED, y_comm_visible_at_end_of_dialog);
     switch (ret){
     case 0:
         ++num_eggs_retrieved;
@@ -844,7 +846,7 @@ bool EggAutonomous::process_hatched_pokemon(
     }else{
         // Leave menu, go back to overworld
         const bool y_comm_visible = true;
-        YCommIconDetector y_comm_detector(y_comm_visible);
+        YCommIconWatcher y_comm_detector(COLOR_RED, y_comm_visible);
         const int ret = run_until<ProControllerContext>(
             env.console, context,
             [](ProControllerContext& context){
@@ -871,7 +873,7 @@ void EggAutonomous::mash_B_until_y_comm_icon(
 ){
     context.wait_for_all_requests();
     const bool y_comm_visible = true;
-    YCommIconDetector y_comm_detector(y_comm_visible);
+    YCommIconWatcher y_comm_detector(COLOR_RED, y_comm_visible);
     int ret = run_until<ProControllerContext>(
         env.console, context,
         [](ProControllerContext& context){

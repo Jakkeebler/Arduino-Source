@@ -4,8 +4,10 @@
  * 
  */
 
+#include "Common/Cpp/Exceptions.h"
 //#include "CommonFramework/VideoPipeline/VideoFeed.h"
 //#include "Controllers/ControllerTypes.h"
+#include "NintendoSwitch/NintendoSwitch_Settings.h"
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_Superscalar.h"
 //#include "NintendoSwitch/Inference/NintendoSwitch_HomeMenuDetector.h"
 #include "NintendoSwitch/Programs/NintendoSwitch_GameEntry.h"
@@ -117,7 +119,7 @@ void touch_date_from_home_switch2(
 ){
     home_to_date_time(console, context, true);
 
-    ssf_press_button(context, BUTTON_A, 216ms, 80ms);
+    ssf_press_button(context, BUTTON_A, ConsoleSettings::instance().DATE_MENU_OPEN_SWITCH2_0, 80ms);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_UP);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
@@ -125,9 +127,9 @@ void touch_date_from_home_switch2(
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
-    ssf_press_button(context, BUTTON_A, 264ms, 80ms);
+    ssf_press_button(context, BUTTON_A, ConsoleSettings::instance().DATE_MENU_CLOSE_SWITCH2_0, 80ms);
 
-    ssf_press_button(context, BUTTON_A, 216ms, 80ms);
+    ssf_press_button(context, BUTTON_A, ConsoleSettings::instance().DATE_MENU_OPEN_SWITCH2_0, 80ms);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_DOWN);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
@@ -135,7 +137,7 @@ void touch_date_from_home_switch2(
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
-    ssf_press_button(context, BUTTON_A, 264ms, 80ms);
+    ssf_press_button(context, BUTTON_A, ConsoleSettings::instance().DATE_MENU_CLOSE_SWITCH2_0, 80ms);
 
     ssf_press_button(context, BUTTON_HOME, settings_to_home_delay, 80ms);
 }
@@ -196,7 +198,7 @@ void rollback_hours_from_home_switch2(
     Milliseconds tv = context->timing_variation();
     Milliseconds unit = 24ms + tv;
 
-    ssf_press_button(context, BUTTON_A, 216ms, 80ms);
+    ssf_press_button(context, BUTTON_A, ConsoleSettings::instance().DATE_MENU_OPEN_SWITCH2_0, 80ms);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
@@ -206,7 +208,7 @@ void rollback_hours_from_home_switch2(
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
     ssf_issue_scroll_ptv(context, SSF_SCROLL_RIGHT);
-    ssf_press_button(context, BUTTON_A, 264ms, 80ms);
+    ssf_press_button(context, BUTTON_A, ConsoleSettings::instance().DATE_MENU_CLOSE_SWITCH2_0, 80ms);
 
     ssf_press_button(context, BUTTON_HOME, settings_to_home_delay, 80ms);
 }

@@ -55,6 +55,9 @@ public:
 
     TimingOptions TIMING_OPTIONS;
 
+    MillisecondsOption DATE_MENU_OPEN_SWITCH2_0;
+    MillisecondsOption DATE_MENU_CLOSE_SWITCH2_0;
+
     CodeboardTimingsOption CODEBOARD_ENTRY_SWITCH1_WIRED;
     CodeboardTimingsOption CODEBOARD_ENTRY_SWITCH1_WIRELESS;
     CodeboardTimingsOption CODEBOARD_ENTRY_SWITCH2_WIRED;
