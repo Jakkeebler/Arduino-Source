@@ -8,6 +8,7 @@
 #define PokemonAutomation_PokemonSwSh_YCommDetector_H
 
 #include "Common/Cpp/Color.h"
+#include "Common/Cpp/TestRunners/UnitTest.h"
 #include "CommonFramework/ImageTools/ImageBoxes.h"
 #include "CommonTools/VisualDetector.h"
 #include "CommonTools/InferenceCallbacks/VisualInferenceCallback.h"
@@ -53,8 +54,8 @@ public:
 private:
     Color m_color;
     ImageFloatBox m_icon;
-    ImageFloatBox m_left;
-    ImageFloatBox m_right;
+//    ImageFloatBox m_left;
+//    ImageFloatBox m_right;
 
     bool m_is_on;
 };
@@ -64,6 +65,11 @@ public:
          : DetectorToFinder("YCommIconWatcher", std::chrono::milliseconds(250), color, is_on)
     {}
 };
+
+
+
+void add_tests_YCommDetector(UnitTestDatabase& database);
+
 
 
 

@@ -9,6 +9,9 @@
 #include "FileLogger.h"
 #include <iostream>
 
+//using std::cout;
+//using std::endl;
+
 namespace PokemonAutomation{
 
 
@@ -50,17 +53,10 @@ void FileLogger::stop() noexcept{
 }
 
 
-void FileLogger::add_listener(Listener& listener){
-    m_listeners.add(listener);
-}
-
-void FileLogger::remove_listener(Listener& listener){
-    m_listeners.remove(listener);
-}
 
 void FileLogger::log(const std::string& msg, Color color){
     std::unique_lock<Mutex> lg(m_lock);
-    m_last_log_tracker += msg;
+    m_last_log_tracker += LogLine{color, msg};
     m_cv.wait(lg, [this]{ return m_queue.size() < m_config.max_queue_size; });
     m_queue.emplace_back(msg, color);
     m_cv.notify_all();
@@ -68,13 +64,13 @@ void FileLogger::log(const std::string& msg, Color color){
 
 void FileLogger::log(std::string&& msg, Color color){
     std::unique_lock<Mutex> lg(m_lock);
-    m_last_log_tracker += msg;
+    m_last_log_tracker += LogLine{color, msg};
     m_cv.wait(lg, [this]{ return m_queue.size() < m_config.max_queue_size; });
     m_queue.emplace_back(std::move(msg), color);
     m_cv.notify_all();
 }
 
-std::vector<std::string> FileLogger::get_last() const{
+std::vector<LogLine> FileLogger::get_last(){
     std::unique_lock<Mutex> lg(m_lock);
     return m_last_log_tracker.snapshot();
 }
@@ -119,9 +115,6 @@ std::string FileLogger::to_file_str(const std::string& msg){
 void FileLogger::internal_log(const std::string& msg, Color color){
     std::string line = normalize_newlines(msg);
 
-    // Notify all listeners (e.g., UI windows)
-    m_listeners.run_method(&Listener::on_log, line, color);
-
     // Write to file
     if (m_file.is_open()){
         std::string file_str = to_file_str(line);
@@ -138,7 +131,8 @@ void FileLogger::thread_loop(){
         m_cv.wait(lg, [&]{
             return m_stopping || !m_queue.empty();
         });
-        if (m_stopping){
+//        cout << "m_stopping = " << m_stopping << ", m_queue.size() = " << m_queue.size() << endl;
+        if (m_stopping && m_queue.empty()){
             break;
         }
         auto& item = m_queue.front();

@@ -174,6 +174,18 @@ std::string tostr_fixed(double x, int precision){
     return std::format("{:.{}f}", x, precision);
 }
 
+std::string tostr_fixed_no_trailing_zero(double x, int precision){
+    std::string str = std::format("{:.{}f}", x, precision);
+    if (str.find('.') != std::string::npos) {
+        str.erase(str.find_last_not_of('0') + 1, std::string::npos);
+        if (str.back() == '.') {
+            str.pop_back();
+        }
+    }
+    return str;
+}
+
+
 
 std::string now_to_filestring(){
 #if _WIN32 && _MSC_VER
@@ -272,6 +284,13 @@ std::string tostr_hex(uint64_t x){
     std::ostringstream ss;
     ss << std::hex << x;
     return ss.str();
+}
+std::string tostr_hex_padded(size_t digits, uint64_t x){
+    std::string str = tostr_hex(x);
+    if (digits > str.size()){
+        str = std::string(digits - str.size(), '0') + str;
+    }
+    return str;
 }
 
 

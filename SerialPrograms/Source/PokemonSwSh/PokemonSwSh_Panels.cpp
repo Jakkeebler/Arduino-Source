@@ -92,7 +92,10 @@ namespace PokemonSwSh{
 
 
 PanelListFactory::PanelListFactory()
-    : PanelListDescriptor(Pokemon::STRING_POKEMON + " Sword and Shield")
+    : PanelListDescriptor(
+        Pokemon::STRING_POKEMON + " Sword and Shield",
+        RESOURCE_PATH() + "CategoryIcons/PokemonSwSh.png"
+    )
 {}
 
 std::vector<PanelEntry> PanelListFactory::make_panels() const{

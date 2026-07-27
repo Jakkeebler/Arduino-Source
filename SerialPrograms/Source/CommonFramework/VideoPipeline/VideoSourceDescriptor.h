@@ -11,6 +11,7 @@
 #include <map>
 #include "Common/Cpp/ImageResolution.h"
 #include "Common/Cpp/Json/JsonValue.h"
+#include "VideoFormats.h"
 
 namespace PokemonAutomation{
 
@@ -61,7 +62,9 @@ public:
 public:
     virtual std::unique_ptr<VideoSource> make_VideoSource(
         Logger& logger,
-        Resolution resolution
+        Resolution resolution,
+        VideoFormat format,
+        FramesPerSecond fps
     ) const = 0;
 };
 
@@ -94,6 +97,8 @@ public:
 
 public:
     Resolution m_resolution;
+    VideoFormat m_format;
+    FramesPerSecond m_fps;
 
 private:
     std::shared_ptr<VideoSourceDescriptor> m_descriptor;

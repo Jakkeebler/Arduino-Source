@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <vector>
 #include "CommonFramework/Language.h"
-#include "OCR_RawOCR.h"
+#include "OCR_RawTesseractOCR.h"
 
 namespace PokemonAutomation{
     class ImageViewRGB32;
@@ -30,20 +30,30 @@ struct TextColorRange{
     {}
 };
 
+bool ocr_language_available(Language language);
+
+// will use the OCR library as per the dropdown in GlobalSettings
+// if the preferred library's resource is missing (i.e. it has not been downloaded),
+// an error will be thrown within OCR initialization infra.
+std::string ocr_read(Language language, const ImageViewRGB32& image, PageSegMode psm = PageSegMode::SINGLE_LINE);
+
+void ensure_ocr_instances(Language language, size_t instances = 1);
+
+void clear_ocr_cache();
 
 // psm: Tesseract Page Segmentation mode. See
-//   SerialPrograms/Source/CommonTools/OCR/OCR_RawOCR.h:PageSegMode
+//   SerialPrograms/Source/CommonTools/OCR/OCR_RawTesseractOCR.h:PageSegMode
 StringMatchResult multifiltered_OCR(
     Language language, const DictionaryMatcher& dictionary, const ImageViewRGB32& image,
     const std::vector<TextColorRange>& text_color_ranges,
     double log10p_spread,
     double min_text_ratio = 0.01, double max_text_ratio = 0.50,
-    OCR::PageSegMode psm = OCR::PageSegMode::SINGLE_BLOCK
+    OCR::PageSegMode psm = OCR::PageSegMode::SINGLE_LINE
 );
 
 StringMatchResult dictionary_OCR(
     Language language, const DictionaryMatcher& dictionary, const ImageViewRGB32& image,
-    double log10p_spread, OCR::PageSegMode psm = OCR::PageSegMode::SINGLE_BLOCK
+    double log10p_spread, OCR::PageSegMode psm = OCR::PageSegMode::SINGLE_LINE
 );
 
 

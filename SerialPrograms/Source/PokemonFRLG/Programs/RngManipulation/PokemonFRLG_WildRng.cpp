@@ -91,6 +91,16 @@ WildRng::WildRng()
         LockMode::LOCK_WHILE_RUNNING,
         true
     )
+    , SOUND(
+        "<b>Sound:</b><br>"
+        "Your in-game sound setting. This affects the possible seeds.",
+        {
+            {SoundSetting::Mono, "mono", "Mono"},
+            {SoundSetting::Stereo, "stereo", "Stereo"}
+        },
+        LockMode::LOCK_WHILE_RUNNING,
+        SoundSetting::Mono
+    )
     , m_target_settings(
         "<font size=4><b>Target Settings</b></font> — Get these from an RNG search tool"
     )
@@ -134,43 +144,6 @@ WildRng::WildRng()
         "70FE", "70FE",
         true
     )
-    , SEED_LIST(
-        "<b>Nearby Seeds:</b><br>"
-        "This box should contain a list of seeds (in order) around and including your target seed, with one seed on each line",
-        LockMode::LOCK_WHILE_RUNNING,
-        "D000\n199A\n77A1\nAABC\n280C\n70FE\nB573\n02F2\n8084\nA533\nED1E", 
-        "D000\n199A\n77A1\nAABC\n280C\n70FE\nB573\n02F2\n8084\nA533\nED1E",
-        true
-    )
-    , SEED_BUTTON(
-        "<b>Seed Button:</b>",
-        {
-            {SeedButton::A, "A", "A"},
-            {SeedButton::Start, "Start", "Start"},
-            {SeedButton::L, "L", "L (L=A)"},
-        },
-        LockMode::LOCK_WHILE_RUNNING,
-        SeedButton::A
-    )
-    , EXTRA_BUTTON(
-        "<b>Extra Button:</b><br>"
-        "Additional button presses that affect the seed.",
-        {
-            {BlackoutButton::None, "None", "None"},
-            {BlackoutButton::L, "L", "Blackout L"},
-            {BlackoutButton::R, "R", "Blackout R"},
-        },
-        LockMode::LOCK_WHILE_RUNNING,
-        BlackoutButton::None
-    )
-    , SEED_DELAY(
-        "<b>Seed Delay Time (ms):</b><br>"
-        "The delay between starting the game and advancing past the title screen. Set this to match your target seed.<br>"
-        "<i>If using Ten Lines for seed info, select <b>Nintendo Switch 1</b> as your console even if using a Switch 2.</i><br>"
-        "<b>Warning: values close to 30500ms can sometimes cause problems, and you may need to manually increase your initial seed calibration or pick a new target.</b>",
-        LockMode::LOCK_WHILE_RUNNING,
-        31338, 30400 // default, min
-    )
     , ADVANCES(
         "<b>Advances:</b><br>The total number of RNG advances for your target.",
         LockMode::LOCK_WHILE_RUNNING,
@@ -185,6 +158,12 @@ WildRng::WildRng()
         "<i>Warning: can result in larger misses.</i>",
         LockMode::LOCK_WHILE_RUNNING,
         false // default
+    )
+    , SEED_RADIUS(
+        "<b>Nearby Seed Radius:</b><br>"
+        "The number of nearby seeds on each side of the target to search when identifying which seed was hit.",
+        LockMode::LOCK_WHILE_RUNNING,
+        5, 1 // default, min
     )
     , MAX_RESETS(
         "<b>Max Resets:</b>",
@@ -237,18 +216,16 @@ WildRng::WildRng()
     PA_ADD_OPTION(m_game_info);
     PA_ADD_OPTION(GAME_VERSION);
     PA_ADD_OPTION(LANGUAGE);
+    PA_ADD_OPTION(SOUND);
     PA_ADD_OPTION(m_target_settings);
     PA_ADD_OPTION(ENCOUNTER_TYPE);
     PA_ADD_OPTION(GAME_LOCATION);
     PA_ADD_OPTION(RNG_METHOD);
     PA_ADD_OPTION(SEED);
-    PA_ADD_OPTION(SEED_LIST);
-    PA_ADD_OPTION(SEED_BUTTON);
-    PA_ADD_OPTION(EXTRA_BUTTON);
-    PA_ADD_OPTION(SEED_DELAY);
     PA_ADD_OPTION(ADVANCES);
     PA_ADD_OPTION(m_program_settings);
     PA_ADD_OPTION(USE_TEACHY_TV);
+    PA_ADD_OPTION(SEED_RADIUS);
     PA_ADD_OPTION(MAX_RESETS);
     PA_ADD_OPTION(MAX_BALL_THROWS);
     PA_ADD_OPTION(MAX_RARE_CANDIES);
@@ -288,7 +265,7 @@ void WildRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
 
     std::map<std::string, std::vector<AdvEncounterSlot>> location_map = encounters_data.get_throw(enc_slug);
     if (location_map.find(loc_slug)==location_map.end()){
-        throw UserSetupError(env.console, "The target Seed is missing from the list of nearby seeds.");
+        throw UserSetupError(env.console, "The target encounter type / location combination could not be found.");
     }
 
     std::vector<AdvEncounterSlot> ENCOUNTER_SLOTS = location_map.find(loc_slug)->second;
@@ -300,22 +277,33 @@ void WildRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
 
     std::set<std::string> SPECIES_LIST;
     for (auto slot : ENCOUNTER_SLOTS){
-        SPECIES_LIST.emplace(slot.species);
+        if (slot.species.find("unown") != std::string::npos){
+            SPECIES_LIST.emplace("unown");
+        }else{
+            SPECIES_LIST.emplace(slot.species);
+        }
     }
 
     const bool SUPER_ROD = ENCOUNTER_TYPE == EncounterType::superrod;
 
-
+    const bool UNOWN_BUMPS = (loc_slug == "tanoby_ruins_monean_chamber" ||
+                              loc_slug == "tanoby_ruins_viapois_chamber");
 
     // prepare timings
 
     const uint16_t TARGET_SEED = parse_seed(env.console, SEED);
-    const std::vector<uint16_t> SEED_VALUES = parse_seed_list(env.console, SEED_LIST);
-    const int16_t SEED_POSITION = seed_position_in_list(TARGET_SEED, SEED_VALUES);
-
-    if (SEED_POSITION == -1){
-        throw UserSetupError(env.console, "The target Seed is missing from the list of nearby seeds.");
+    SeedsDatabase seeds_db(seeds_json_path(GAME_VERSION == GameVersion::firered, LANGUAGE));
+    const SeedMatch seed_match = seeds_db.find_seed(TARGET_SEED, SOUND, SEED_RADIUS);
+    if (!seed_match.found){
+        throw UserSetupError(env.console, "The target Seed was not found in the seed database for this game version, language, and sound setting.");
     }
+    const std::vector<uint16_t> SEED_VALUES = seed_match.seed_values;
+    const int16_t SEED_POSITION = seed_match.seed_position;
+    const uint64_t SEED_DELAY = seed_match.seed_delay;
+    const SeedButton SEED_BUTTON = seed_match.seed_button;
+    const BlackoutButton EXTRA_BUTTON = seed_match.extra_button;
+    env.log("Seed delay: " + std::to_string(SEED_DELAY) + "ms, button mode: " + seed_match.button_mode
+        + ", column: " + seed_match.column_name);
 
     PokemonFRLG_RngTarget TARGET = PokemonFRLG_RngTarget::sweetscent;
 
@@ -388,11 +376,12 @@ void WildRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
     env.log("   SpD: " + std::to_string(target_result.ivs.spdef));
     env.log("   Spe: " + std::to_string(target_result.ivs.speed));
 
-    RngCalibrations calibrations = {
+    const RngCalibrations initial_calibrations = {
         RNG_CALIBRATION.seed_calibration / FRLG_FRAME_DURATION,
         RNG_CALIBRATION.csf_calibration,
         RNG_CALIBRATION.advances_calibration
     };
+    RngCalibrations calibrations = initial_calibrations;
     log_calibrations(env.console, calibrations, true);
 
     Milliseconds launch_delay = INITIAL_LAUNCH_DELAY;
@@ -401,6 +390,7 @@ void WildRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
     RngCalibrationHistory calibration_history; 
 
     uint16_t failed_searches = 0;
+    uint16_t advances_bump = 0;
 
     while (true){
         if (calibration_history.results.size() > 0){
@@ -438,10 +428,22 @@ void WildRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
 
         if (calibration_history.results.size() > 0){
             calibrations = get_calibrations(env.console, calibration_history, SEED_VALUES, SEED_POSITION, ADVANCES);
+        }else{
+            calibrations = initial_calibrations;
         }
 
-        // if previous resets had uncertain advances, slightly modify the seed delay to try to hit a different target
-        apply_seed_bump(calibrations, uncertain_history);
+        // there can be long runs of identical unowns (especially for A and Z), 
+        // so a moderate offset may be needed to gain additional info about advances position
+        if (UNOWN_BUMPS){
+            if (uncertain_history.results.empty()){
+                advances_bump = 0;
+            }else{
+                calibrations.ingame_offset += advances_bump;
+            }
+        }else{
+            // if previous resets had uncertain advances, slightly modify the seed delay to try to hit a different target
+            apply_seed_bump(calibrations, uncertain_history);
+        }
 
         uint64_t ingame_advances = ADVANCES - CONTINUE_SCREEN_FRAMES;
 
@@ -521,14 +523,21 @@ void WildRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
             species_stats = STATS_DATA.get_throw(pokemon.species);        
         }catch (const InternalProgramError& err){
             env.log(err.message());
-            env.log("Failed to load base stats.");
+            env.log("Failed to load base stats.", COLOR_RED);
             continue;
         }
         BaseStats base_stats = species_stats.base_stats;
         int16_t gender_threshold = species_stats.gender_threshold;
 
         AdvRngFilters filters = observation_to_filters(pokemon, base_stats, AdvRngMethod::Any);
+        bool valid_stats = validate_level(filters, pokemon, ENCOUNTER_SLOTS, base_stats);
         RNG_FILTERS.set(filters);
+
+        if (!valid_stats){
+            env.log("Invalid encounter stats. Resetting...", COLOR_RED);
+            failed_searches++;
+            continue;
+        }
 
         std::vector<AdvRngState> search_hits = refine_calibration_with_rare_candy(
             env, context, LANGUAGE, pokemon, filters, base_stats,
@@ -548,6 +557,15 @@ void WildRng::program(SingleSwitchProgramEnvironment& env, ProControllerContext&
         env.log("RNG search finished.");
         update_failed_searches(failed_searches, search_hits);
 
+        if (   UNOWN_BUMPS
+            && search_hits.size() > 0
+            && same_seeds(search_hits)
+            && search_hits[0].seed == TARGET_SEED
+        ){
+            // keep increasing advances until hitting something that provides new information (A/Z form with different nature/IVs or a !/? form)
+            // only bump advances for the target seed to ensure nothing is missed
+            advances_bump++;
+        }
     }
 
     if (GO_HOME_WHEN_DONE){

@@ -26,7 +26,8 @@ TimingOptions::TimingOptions()
         "Controller Timing Options",
         LockMode::UNLOCK_WHILE_RUNNING,
         EnableMode::ALWAYS_ENABLED,
-        true
+        true,
+        false
     )
     , WIRED(
         "<b>Wired Controller Timing Variation:</b><br>"
@@ -77,6 +78,11 @@ ConsoleSettings::ConsoleSettings()
     )
     , BLIND_START_GAME_MASH(
         "<b>Blind Start Game Mash:</b><br>Mash A for this long to start the game when video inference is unavailable.",
+        LockMode::LOCK_WHILE_RUNNING,
+        "2000 ms"
+    )
+    , CLOSE_GAME_DELAY(
+        "<b>Close Game Delay:</b><br>Delay from closing a game to when it's actually closed.",
         LockMode::LOCK_WHILE_RUNNING,
         "2000 ms"
     )
@@ -158,6 +164,7 @@ ConsoleSettings::ConsoleSettings()
     PA_ADD_OPTION(CONTROLLER_SETTINGS);
     PA_ADD_OPTION(TRUST_USER_CONSOLE_SELECTION);
     PA_ADD_OPTION(BLIND_START_GAME_MASH);
+    PA_ADD_OPTION(CLOSE_GAME_DELAY);
     PA_ADD_OPTION(SETTINGS_TO_HOME_DELAY0);
     PA_ADD_OPTION(START_GAME_REQUIRES_INTERNET);
     PA_ADD_OPTION(START_GAME_INTERNET_CHECK_DELAY0);

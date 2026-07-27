@@ -106,7 +106,7 @@ TournamentFarmer2::TournamentFarmer2()
         LockMode::UNLOCK_WHILE_RUNNING,
         1, 0
     )
-    , BATTLE_AI(true)
+    , BATTLE_AI(true, GroupOption::EnableMode::ALWAYS_ENABLED)
     , GO_HOME_WHEN_DONE(false)
     , NOTIFICATION_STATUS_UPDATE("Status Update", true, false, std::chrono::seconds(3600))
     , NOTIFICATIONS({
@@ -127,7 +127,7 @@ TournamentFarmer2::TournamentFarmer2()
     STOP_AFTER_CURRENT.add_listener(*this);
 }
 
-void TournamentFarmer2::on_press(){
+void TournamentFarmer2::on_press(ButtonCell& button){
     global_logger_tagged().log("Stop after current requested...");
     m_stop_after_current.store(true, std::memory_order_relaxed);
     STOP_AFTER_CURRENT.set_pressed();
@@ -224,7 +224,7 @@ void TournamentFarmer2::program(SingleSwitchProgramEnvironment& env, ProControll
             switch (ret){
             case 0:
                 env.log("Detected battle menu.");
-                run_singles_battle(env, env.console, context, BATTLE_AI, true);
+                run_singles_battle(env.console, context, BATTLE_AI, true);
                 stats.battles++;
                 env.update_stats();
                 break;

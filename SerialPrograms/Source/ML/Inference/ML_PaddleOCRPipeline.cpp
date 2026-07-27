@@ -19,7 +19,7 @@ namespace PokemonAutomation{
 namespace ML{
 
 
-static std::pair<std::string, std::string> get_paths(Language language){
+std::pair<std::string, std::string> PaddleOCRPipeline::get_paths(Language language){
     std::string base = RESOURCE_PATH() + "PaddleOCR/";
     switch(language){
     case Language::None:

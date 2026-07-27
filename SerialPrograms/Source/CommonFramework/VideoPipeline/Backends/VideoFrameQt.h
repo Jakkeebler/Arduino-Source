@@ -9,8 +9,14 @@
 
 #include <QVideoFrame>
 #include "Common/Cpp/Time.h"
+#include "CommonFramework/VideoPipeline/VideoFormats.h"
 
 namespace PokemonAutomation{
+
+
+VideoFormat QVideoFrameFormat_to_VideoFormat(QVideoFrameFormat::PixelFormat format);
+QVideoFrameFormat::PixelFormat VideoFormat_to_QVideoFrameFormat(VideoFormat format);
+
 
 
 class VideoFrame{

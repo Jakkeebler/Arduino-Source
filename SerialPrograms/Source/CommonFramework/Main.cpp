@@ -29,13 +29,15 @@
 #include "Integrations/DppIntegration/DppClient.h"
 #include "Logging/Logger.h"
 #include "Logging/OutputRedirector.h"
-#include "Logging/FileWindowLogger.h"
+#include "Common/Cpp/Logging/FileLogger.h"
+#include "Common/Cpp/Logging/GlobalLogger.h"
+#include "Common/Cpp/Logging/MultiOutputLogger.h"
 //#include "Tools/StatsDatabase.h"
 //#include "Windows/DpiScaler.h"
 #include "Startup/SetupSettings.h"
 #include "Startup/NewVersionCheck.h"
 #include "CommonFramework/VideoPipeline/Backends/CameraImplementations.h"
-#include "CommonTools/OCR/OCR_RawOCR.h"
+#include "CommonTools/OCR/OCR_Routines.h"
 #include "ControllerInput/ControllerInput.h"
 #include "Controllers/SerialPortPollerQt.h"
 #include "Integrations/DiscordWebhook.h"
@@ -48,6 +50,10 @@ using std::endl;
 
 using namespace PokemonAutomation;
 
+namespace PokemonAutomation{
+    bool USE_QT_UI = true;
+}
+
 Q_DECLARE_METATYPE(std::string)
 
 void set_working_directory(){
@@ -58,6 +64,22 @@ void set_working_directory(){
         QString base_folder_path = QFileInfo(app_bundle_path).dir().absolutePath();
         QDir::setCurrent(base_folder_path);
     }
+}
+
+namespace PokemonAutomation{
+
+
+
+FileLogger& global_file_logger(){
+    static FileLogger logger(
+        GlobalThreadPools::unlimited_normal(),
+        FileLoggerConfig{
+            .file_path = USER_FILE_PATH() + QCoreApplication::applicationName().toStdString() + ".log",
+        }
+    );
+    return logger;
+}
+
 }
 
 
@@ -73,10 +95,19 @@ int run_program(int argc, char *argv[]){
     GlobalOutputRedirector redirect_stdout(std::cout, "stdout", Color());
     GlobalOutputRedirector redirect_stderr(std::cerr, "stderr", COLOR_RED);
 
+    {
+        MultiOutputLogger& logger = global_multi_logger();
+        logger.add_listener(global_file_logger());
+    }
+
     Logger& logger = global_logger_tagged();
 
     logger.log("================================================================================");
     logger.log("Starting Program...");
+    logger.log("Current path: " + QDir::currentPath().toStdString());
+    logger.log("Executable path: " + qApp->applicationDirPath().toStdString());
+    logger.log("Program setting folder: " + SETTINGS_PATH());
+    logger.log("Program resources folder: " + RESOURCE_PATH());
 
     qRegisterMetaType<size_t>("size_t");
     qRegisterMetaType<uint8_t>("uint8_t");
@@ -225,7 +256,7 @@ int main(int argc, char *argv[]){
 
     //  We must clear the OCR cache or it will crash on Linux when the library
     //  unloads before the cache is destructed from static memory.
-    OCR::clear_cache();
+    OCR::clear_ocr_cache();
 
     //  Stop the controllers.
     global_input_stop();
@@ -235,7 +266,7 @@ int main(int argc, char *argv[]){
     SystemSleepController::instance().stop();
     global_periodic_runner().stop();
     global_watchdog().stop();
-    static_cast<FileWindowLogger&>(global_logger_raw()).stop();
+    global_file_logger().stop();
 
 //
 //  Workaround Qt 6.9 thread-adoption bug on Windows.

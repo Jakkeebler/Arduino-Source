@@ -15,7 +15,6 @@
 #include "Common/Cpp/Concurrency/BusyPeriodicRunner.h"
 #include "CommonFramework/Exceptions/OperationFailedException.h"
 #include "CommonTools/Async/InferenceRoutines.h"
-#include "CommonTools/OCR/OCR_RawOCR.h"
 #include "PokemonLA/Inference/PokemonLA_MountDetector.h"
 #include "Pokemon/Pokemon_Strings.h"
 #include "PokemonBDSP/Inference/BoxSystem/PokemonBDSP_IvJudgeReader.h"
@@ -169,12 +168,14 @@
 #include "Common/PABotBase2/ReliableConnectionLayer/PABotBase2FW_ReliableStreamConnection.h"
 #include "Common/PABotBase2/ReliableConnectionLayer/PABotBase2CC_ReliableStreamConnection.h"
 #include "Common/Cpp/StreamConnections/MockDevice.h"
-#include "ML/Inference/ML_PaddleOCRPipeline.h"
-#include "CommonTools/OCR/OCR_RawPaddleOCR.h"
+#include "CommonTools/OCR/OCR_Routines.h"
 #include "CommonTools/Images/ImageTools.h"
 #include "PokemonFRLG/Inference/PokemonFRLG_BattleSelectionArrowDetector.h"
 #include "Controllers/RumbleListener.h"
 #include "PokemonSwSh/Inference/PokemonSwSh_SelectionArrowFinder.h"
+#include "PokemonSwSh/Inference/PokemonSwSh_MainMenuDetector.h"
+#include "PokemonSwSh/Programs/PokemonSwSh_MenuNavigation.h"
+#include "PokemonLGPE/Inference/Battles/PokemonLGPE_BattleArrowDetector.h"
 
 
 
@@ -294,7 +295,7 @@ using namespace PABotBase2;
 
 
 
-void TestProgram::on_press(){
+void TestProgram::on_press(ButtonCell& button){
     global_logger_tagged().log("Button Pressed");
 //    BUTTON.set_enabled(false);
     BUTTON0.set_text("Button Pressed");
@@ -305,6 +306,13 @@ void TestProgram::on_press(){
 
 
 
+class DialogArrowMatcher : public ImageMatch::WaterfillTemplateMatcher{
+public:
+    DialogArrowMatcher()
+        : WaterfillTemplateMatcher("test.png", Color(0xffc0c0c0), Color(0xffffffff), 100)
+    {}
+
+};
 
 
 
@@ -317,10 +325,10 @@ void TestProgram::program(MultiSwitchProgramEnvironment& env, CancellableScope& 
     using namespace OCR;
     using namespace NintendoSwitch;
     using namespace Pokemon;
-    using namespace PokemonSwSh;
+//    using namespace PokemonSwSh;
 //    using namespace PokemonBDSP;
 //    using namespace PokemonLA;
-//    using namespace PokemonSV;
+    using namespace PokemonSV;
 //    using namespace PokemonLZA;
 //    using namespace PokemonFRLG;
 
@@ -329,10 +337,100 @@ void TestProgram::program(MultiSwitchProgramEnvironment& env, CancellableScope& 
 //    [[maybe_unused]] BotBase& botbase = env.consoles[0];
     [[maybe_unused]] VideoFeed& feed = env.consoles[0];
     [[maybe_unused]] VideoOverlay& overlay = env.consoles[0];
-    ProControllerContext context(scope, console.controller<ProController>());
+//    ProControllerContext context(scope, console.controller<ProController>());
     // JoyconContext context(scope, console.controller<JoyconController>());
     VideoOverlaySet overlays(overlay);
 
+
+#if 0
+    size_t min_area = 100;
+    std::string path = "test.png";
+
+    ImageRGB32 image(path);
+
+    PackedBinaryMatrix matrix = compress_rgb32_to_binary_range(
+        image,
+        0xffc0c0c0, 0xffffffff
+    );
+
+    cout << matrix.dump() << endl;
+
+
+
+    std::vector<WaterfillObject> objects = find_objects_inplace(matrix, min_area);
+    if (objects.empty()){
+        throw FileException(
+            nullptr, PA_CURRENT_FUNCTION,
+            "Failed to find any waterfill objects in resource template file.",
+            std::move(path)
+        );
+    }
+
+    const WaterfillObject* largest_object = &objects[0];
+    for (const WaterfillObject& object : objects){
+        if (largest_object->area < object.area){
+            largest_object = &object;
+        }
+    }
+
+
+//    ImageRGB32 cropped = extract_box_reference(image, *largest_object).copy();
+    extract_box_reference(image, *largest_object).save("image-cropped.png");
+    filter_by_mask(matrix, image, Color(0), true);
+    extract_box_reference(image, *largest_object).save("image-filtered.png");
+#endif
+
+
+#if 1
+
+    PokemonLGPE::BattleArrowDetector detector(COLOR_RED, {0.008121, 0.659091, 0.053364, 0.332645});
+    detector.make_overlays(overlays);
+    while (true){
+//        WallClock timestamp = current_time();
+        scope.wait_for(50ms);
+
+//        cout << detector.detect(feed.snapshot_recent_nonblocking(timestamp)) << endl;
+        cout << detector.detect(feed.snapshot_latest_blocking()) << endl;
+    }
+#endif
+
+
+
+//    OperationFailedException::fire(ErrorReport::SEND_ERROR_REPORT, "asdf", console);
+
+
+//    SinglesAIOption ai(false);
+//    run_singles_battle(console, context, ai, false);
+
+
+
+//    menus_to_boxsystem(console, context);
+
+
+
+
+#if 0
+    PokemonSwSh::BoxMenuDetector detector;
+    detector.make_overlays(overlays);
+
+
+    auto snapshot = feed.snapshot();
+    cout << detector.detect(snapshot) << endl;
+#endif
+
+
+
+#if 0
+    YCommIconDetector detector(COLOR_RED, true);
+    detector.make_overlays(overlays);
+
+    auto snapshot = feed.snapshot();
+    cout << detector.detect(snapshot) << endl;
+#endif
+
+
+
+//    context->issue_gyro_accel_x(&scope, 1000ms, 1000ms, 0ms, 123);
 
 //    OperationFailedException::fire(ErrorReport::SEND_ERROR_REPORT, "test", console);
 
@@ -671,7 +769,7 @@ void TestProgram::program(MultiSwitchProgramEnvironment& env, CancellableScope& 
     ImageViewRGB32 cropped = extract_box_reference(image1, ImageFloatBox{BOX.x(), BOX.y(), BOX.width(), BOX.height()});
 
     // auto snapshot = feed.snapshot();
-    std::string text = OCR::paddle_ocr_read(LANGUAGE, cropped);
+    std::string text = OCR::ocr_read(LANGUAGE, cropped);
     cout << text << endl;
 
     

@@ -18,6 +18,7 @@
 #include "PokemonSwSh/Inference/PokemonSwSh_SelectionArrowFinder.h"
 #include "PokemonSwSh/Inference/PokemonSwSh_DialogBoxDetector.h"
 #include "PokemonSwSh/Inference/PokemonSwSh_ReceivePokemonDetector.h"
+#include "PokemonSwSh/Inference/PokemonSwSh_YCommDetector.h"
 #include "PokemonSwSh/Programs/PokemonSwSh_GameEntry.h"
 #include "PokemonSwSh/MaxLair/Inference/PokemonSwSh_MaxLair_Detect_Entrance.h"
 #include "PokemonSwSh/MaxLair/Framework/PokemonSwSh_MaxLair_Notifications.h"
@@ -34,7 +35,7 @@ namespace PokemonSwSh{
 namespace MaxLairInternal{
 
 
-StateMachineAction mash_A_to_entrance(
+StateMachineAction process_entrance(
     AdventureRuntime& runtime,
     VideoStream& stream, ProControllerContext& context,
     const ImageViewRGB32& entrance
@@ -49,6 +50,7 @@ StateMachineAction mash_A_to_entrance(
         }
 
         EntranceDetector entrance_detector(entrance);
+        YCommIconWatcher overworld;
         SelectionArrowFinder prompt(stream.overlay(), {0.362689, 0.282828, 0.625000, 0.580808});
         WhiteDialogBoxWatcher white_dialog;
         BlackDialogBoxDetector black_dialog(true);
@@ -60,6 +62,7 @@ StateMachineAction mash_A_to_entrance(
             std::chrono::seconds(10),
             {
                 entrance_detector,
+                overworld,
                 prompt,
                 white_dialog,
                 black_dialog,
@@ -74,21 +77,22 @@ StateMachineAction mash_A_to_entrance(
 
         switch (ret){
         case 0:
+        case 1:
             stream.log("Detected entrance.");
             return StateMachineAction::KEEP_GOING;
-        case 1:
+        case 2:
             stream.log("Detected prompt.");
             pbf_press_button(context, BUTTON_A, 80ms, 320ms);
             break;
-        case 2:
+        case 3:
             stream.log("Detected dialog triangle.");
             pbf_press_button(context, BUTTON_B, 80ms, 320ms);
             break;
-        case 3:
+        case 4:
             stream.log("Detected dialog box.");
             pbf_press_button(context, BUTTON_B, 80ms, 320ms);
             break;
-        case 4:
+        case 5:
             stream.log("Detected receive " + Pokemon::STRING_POKEMON + ".");
             pbf_press_button(context, BUTTON_B, 80ms, 320ms);
             break;
@@ -224,14 +228,14 @@ StateMachineAction run_caught_screen(
             pbf_press_dpad(context, DPAD_DOWN, 80ms, 400ms);
             pbf_press_button(context, BUTTON_B, 80ms, 1000ms);
             pbf_press_button(context, BUTTON_A, 80ms, 920ms);
-            return mash_A_to_entrance(runtime, console, context, entrance);
+            return process_entrance(runtime, console, context, entrance);
         }else{
-            console.log("Taking non-shiny boss and returning to entrance...", COLOR_BLUE);
+            console.log("Taking non-boss shiny and returning to entrance...", COLOR_BLUE);
             tracker.scroll_to(shinies[0]);
             tracker.enter_summary();    //  Enter summary to verify you're on the right mon.
             tracker.leave_summary();
             synchronize_caught_screen(console_index, console, context, state_tracker);
-            StateMachineAction state = mash_A_to_entrance(runtime, console, context, entrance);
+            StateMachineAction state = process_entrance(runtime, console, context, entrance);
             if (state == StateMachineAction::RESET_RECOVER){
                 throw_and_log<FatalProgramException>(
                     console.logger(),

@@ -46,10 +46,16 @@ private:
 
     QComboBox* m_sources_box;
     QComboBox* m_resolution_box;
+    QComboBox* m_format_box;
     QPushButton* m_reset_button;
 
     std::vector<std::shared_ptr<VideoSourceDescriptor>> m_sources;
-    std::vector<Resolution> m_resolutions;
+    std::vector<
+        std::pair<
+            Resolution,
+            std::vector<std::pair<VideoFormat, size_t>>
+        >
+    > m_formats;
 
 };
 

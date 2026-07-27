@@ -13,7 +13,10 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QMessageBox>
+#include "Common/Cpp/ScopeExit.h"
+#include "Common/Cpp/Logging/MultiOutputLogger.h"
 #include "Common/Cpp/CpuId/CpuId.h"
+#include "Common/Cpp/Exceptions.h"
 #include "CommonFramework/Globals.h"
 #include "CommonFramework/GlobalSettingsPanel.h"
 #include "CommonFramework/Logging/FileWindowLogger.h"
@@ -94,6 +97,7 @@ MainWindow::MainWindow(QWidget* parent)
     program_layout->addWidget(m_program_list);
 #else
     m_program_list = new ProgramSelect(*this, *this);
+    m_program_list->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     left_layout->addWidget(m_program_list, 1);
 #endif
 
@@ -218,7 +222,14 @@ MainWindow::MainWindow(QWidget* parent)
         );
     }
     {
-        m_output_window.reset(new FileWindowLoggerWindow((FileWindowLogger&)global_logger_raw()));
+        m_output_window.reset(
+            new FileWindowLoggerWindow(
+                nullptr,
+                global_logger_raw().get_last()
+            )
+        );
+        global_multi_logger().add_listener(*m_output_window);
+
         QPushButton* output = new QPushButton("Output Window", support_box);
         buttons->addWidget(output);
         connect(
@@ -280,7 +291,10 @@ MainWindow::~MainWindow(){
     GlobalSettings::instance().WINDOW_SIZE->WIDTH.remove_listener(*this);
     GlobalSettings::instance().WINDOW_SIZE->HEIGHT.remove_listener(*this);
     GlobalSettings::instance().WINDOW_SIZE->X_POS.remove_listener(*this);
-    GlobalSettings::instance().WINDOW_SIZE->Y_POS.remove_listener(*this);    
+    GlobalSettings::instance().WINDOW_SIZE->Y_POS.remove_listener(*this);
+    if (m_output_window){
+        global_multi_logger().remove_listener(*m_output_window);
+    }
 }
 
 int32_t move_x_within_screen_bounds(int32_t x_pos){
@@ -374,6 +388,9 @@ void MainWindow::load_panel(
     }
 
     m_panel_transition = true;
+    ScopeExit cleanup([&]{
+        m_panel_transition = false;
+    });
     close_panel();
 
     //  Make new widget.
@@ -384,24 +401,27 @@ void MainWindow::load_panel(
         m_current_panel_descriptor = std::move(descriptor);
         m_current_panel = std::move(panel);
         m_right_panel_layout->addWidget(m_current_panel_widget);
+        return;
+    }catch (Exception& e){
+        e.log(global_logger_tagged());
+    }catch (std::exception& e){
+        global_logger_tagged().log(std::string("MainWindow::load_panel() - Exception: ") + e.what(), COLOR_RED);
     }catch (...){
-        if (m_current_panel_widget != nullptr){
-            delete m_current_panel_widget;
-        }
-        m_panel_transition = false;
-        throw;
+        global_logger_tagged().log("MainWindow::load_panel() - Unknown Exception", COLOR_RED);
     }
-    m_panel_transition = false;
+    if (m_current_panel_widget != nullptr){
+        delete m_current_panel_widget;
+    }
 }
 void MainWindow::on_busy(){
     if (m_program_list){
-        m_program_list->setEnabled(false);
+        m_program_list->lock();
         m_settings->setEnabled(false);
     }
 }
 void MainWindow::on_idle(){
     if (m_program_list){
-        m_program_list->setEnabled(true);
+        m_program_list->unlock();
         m_settings->setEnabled(true);
     }
 }

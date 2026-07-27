@@ -13,7 +13,6 @@
 #include "CommonTools/Images/WaterfillUtilities.h"
 #include "CommonTools/Images/SolidColorTest.h"
 #include "CommonTools/OCR/OCR_NumberReader.h"
-#include "CommonTools/OCR/OCR_RawOCR.h"
 #include "PokemonPokopia_PCDetection.h"
 
 namespace PokemonAutomation{
@@ -90,6 +89,22 @@ bool InfoIconDetector::detect(const ImageViewRGB32& screen){
     return found;
 }
 
+BlueDialogDetector::BlueDialogDetector(Color color)
+    : m_color(color)
+    , m_box(0.195000, 0.830000, 0.022500, 0.130000)
+{}
+void BlueDialogDetector::make_overlays(VideoOverlaySet& items) const{
+    items.add(m_color, m_box);
+}
+bool BlueDialogDetector::detect(const ImageViewRGB32& screen){
+    const bool found = is_solid(
+        extract_box_reference(screen, m_box),
+        {0, 0.333333, 0.666667},
+        0.25
+    );
+    return found;
+}
+
 class StampMatcher : public ImageMatch::WaterfillTemplateMatcher{
 public:
     // image template matcher for stamps
@@ -97,7 +112,7 @@ public:
     // - min_height: candidate image min height if video stream is 1080p
     StampMatcher(Stamp stamp, size_t min_width, size_t min_height, double max_rmsd);
     static const StampMatcher& mew(){
-        static StampMatcher matcher(Stamp::MEW, 40, 40, 70);
+        static StampMatcher matcher(Stamp::MEW, 40, 40, 100);
         return matcher;
     }
 
@@ -261,7 +276,7 @@ bool RecipeIconDetector::detect(const ImageViewRGB32& screen){
     double screen_rel_size_2 = screen_rel_size * screen_rel_size;
 
     double min_area_1080p = 500;
-    double rmsd_threshold = 95;
+    double rmsd_threshold = 100;
     size_t min_area = size_t(screen_rel_size_2 * min_area_1080p);
 
     const std::vector<std::pair<uint32_t, uint32_t>> FILTERS = {

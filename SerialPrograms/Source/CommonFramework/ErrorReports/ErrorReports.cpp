@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QMessageBox>
 #include "Common/Cpp/PrettyPrint.h"
+#include "Common/Cpp/Logging/GlobalLogger.h"
 #include "Common/Cpp/Json/JsonArray.h"
 #include "Common/Cpp/Json/JsonObject.h"
 #include "Common/Cpp/Concurrency/AsyncTask.h"
@@ -41,7 +42,9 @@ ErrorReportOption::ErrorReportOption()
     : GroupOption(
         "Error Reports",
         LockMode::UNLOCK_WHILE_RUNNING,
-        GroupOption::EnableMode::ALWAYS_ENABLED, true
+        GroupOption::EnableMode::ALWAYS_ENABLED,
+        true,
+        false
     )
     , DESCRIPTION(
         "Send error reports to the " + PROGRAM_NAME + " server to help them resolve issues and improve the program."
@@ -133,8 +136,8 @@ SendableErrorReport::SendableErrorReport(
     m_image = image;
     {
         std::string log;
-        for (const std::string& line : global_logger_raw().get_last()){
-            log += line;
+        for (const LogLine& line : global_logger_raw().get_last()){
+            log += line.text;
             log += "\r\n";
         }
         QFile file(QString::fromStdString(m_directory + ERROR_LOGS_NAME));

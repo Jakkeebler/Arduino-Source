@@ -13,6 +13,7 @@
 #include "CommonFramework/Language.h"
 #include "CommonFramework/Tools/VideoStream.h"
 #include "NintendoSwitch/Controllers/Procon/NintendoSwitch_ProController.h"
+#include "PokemonFRLG/Inference/Menus/PokemonFRLG_PartySlot.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -121,6 +122,9 @@ enum class StartMenuContext {
 };
 void open_party_menu_from_overworld(ConsoleHandle& console, ProControllerContext& context, StartMenuContext menu_context = StartMenuContext::STANDARD);
 
+// Starting from the party menu, detect the last occupied party slot
+PartySlot detect_last_occupied_party_slot(ConsoleHandle& console);
+
 // Swap the Pokémon at game_slot_1indexed (2–6) into the lead (slot 1) via the overworld party menu SWITCH command.
 // Assumes the party menu is closed and the player is in the overworld.
 void switch_party_lead_overworld(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed);
@@ -162,6 +166,10 @@ void heal_at_pokecenter(ConsoleHandle& console, ProControllerContext& context);
 // the same direction as the first thumbstick press.
 // returns -1 if no encounter is triggered, 0 if a non-shiny is encounter, and 1 if a shiny is encountered
 int grass_spin(ConsoleHandle& console, ProControllerContext& context, bool leftright, Seconds timeout = std::chrono::seconds(60));
+
+// Trigger encounters by fishing with a registered rod. The player must be facing water.
+// returns -1 if no encounter is triggered, 0 if a non-shiny is encounter, and 1 if a shiny is encountered
+int fish_encounter(ConsoleHandle& console, ProControllerContext& context, Seconds timeout = 300s);
 
 // Go to home to check that scaling is 100%. Then resume game.
 void home_black_border_check(ConsoleHandle& console, ProControllerContext& context);

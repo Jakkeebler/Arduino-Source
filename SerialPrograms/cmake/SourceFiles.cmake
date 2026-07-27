@@ -112,8 +112,11 @@ file(GLOB LIBRARY_SOURCES
     ../Common/Cpp/Logging/AbstractLogger.h
     ../Common/Cpp/Logging/FileLogger.cpp
     ../Common/Cpp/Logging/FileLogger.h
+    ../Common/Cpp/Logging/GlobalLogger.cpp
+    ../Common/Cpp/Logging/GlobalLogger.h
     ../Common/Cpp/Logging/LastLogTracker.cpp
     ../Common/Cpp/Logging/LastLogTracker.h
+    ../Common/Cpp/Logging/MultiOutputLogger.h
     ../Common/Cpp/Logging/OutputRedirector.cpp
     ../Common/Cpp/Logging/OutputRedirector.h
     ../Common/Cpp/Logging/TaggedLogger.cpp
@@ -213,6 +216,10 @@ file(GLOB LIBRARY_SOURCES
     ../Common/Cpp/Strings/StringTools.h
     ../Common/Cpp/Strings/Unicode.cpp
     ../Common/Cpp/Strings/Unicode.h
+    ../Common/Cpp/TestRunners/UnitTest.h
+    ../Common/Cpp/TestRunners/UnitTestDatabase.h
+    ../Common/Cpp/TestRunners/ParallelUnitTestRunner.cpp
+    ../Common/Cpp/TestRunners/ParallelUnitTestRunner.h
     ../Common/Cpp/Time.cpp
     ../Common/Cpp/Time.h
     ../Common/Cpp/UiWrapper.h
@@ -448,6 +455,8 @@ file(GLOB LIBRARY_SOURCES
     Source/CommonFramework/Options/Environment/ThemeSelectorOption.h
     Source/CommonFramework/Options/LabelCellOption.cpp
     Source/CommonFramework/Options/LabelCellOption.h
+    Source/CommonFramework/Options/NestedBoxDrawOption.cpp
+    Source/CommonFramework/Options/NestedBoxDrawOption.h
     Source/CommonFramework/Options/QtWidget/LabelCellWidget.cpp
     Source/CommonFramework/Options/QtWidget/LabelCellWidget.h
     Source/CommonFramework/Options/ResolutionOption.cpp
@@ -496,12 +505,24 @@ file(GLOB LIBRARY_SOURCES
     Source/CommonFramework/Recording/StreamRecorder.h
     Source/CommonFramework/ResourceDownload/DownloadThread.cpp
     Source/CommonFramework/ResourceDownload/DownloadThread.h
-    Source/CommonFramework/ResourceDownload/RequiredDownload.cpp
-    Source/CommonFramework/ResourceDownload/RequiredDownload.h
-    Source/CommonFramework/ResourceDownload/RequiredDownloadManager.cpp
-    Source/CommonFramework/ResourceDownload/RequiredDownloadManager.h
+    Source/CommonFramework/ResourceDownload/GlobalResourceDownloadManager.cpp
+    Source/CommonFramework/ResourceDownload/GlobalResourceDownloadManager.h
+    Source/CommonFramework/ResourceDownload/ProgramMissingResourceTracker.cpp
+    Source/CommonFramework/ResourceDownload/ProgramMissingResourceTracker.h
+    Source/CommonFramework/ResourceDownload/ProgramResourceDownloadWidget.cpp
+    Source/CommonFramework/ResourceDownload/ProgramResourceDownloadWidget.h
+    Source/CommonFramework/ResourceDownload/ResourceDownload.cpp
+    Source/CommonFramework/ResourceDownload/ResourceDownload.h
     Source/CommonFramework/ResourceDownload/ResourceDownloadHelpers.cpp
     Source/CommonFramework/ResourceDownload/ResourceDownloadHelpers.h
+    Source/CommonFramework/ResourceDownload/SettingsResourceDownloadOptions.cpp
+    Source/CommonFramework/ResourceDownload/SettingsResourceDownloadOptions.h
+    Source/CommonFramework/ResourceDownload/SettingsResourceDownloadRow.cpp
+    Source/CommonFramework/ResourceDownload/SettingsResourceDownloadRow.h
+    Source/CommonFramework/ResourceDownload/SettingsResourceDownloadTable.cpp
+    Source/CommonFramework/ResourceDownload/SettingsResourceDownloadTable.h
+    Source/CommonFramework/ResourceDownload/SettingsResourceDownloadWidget.cpp
+    Source/CommonFramework/ResourceDownload/SettingsResourceDownloadWidget.h
     Source/CommonFramework/Startup/NewVersionCheck.cpp
     Source/CommonFramework/Startup/NewVersionCheck.h
     Source/CommonFramework/Startup/SetupSettings.cpp
@@ -536,6 +557,7 @@ file(GLOB LIBRARY_SOURCES
     Source/CommonFramework/VideoPipeline/Backends/QVideoFrameCache.h
     Source/CommonFramework/VideoPipeline/Backends/SnapshotManager.cpp
     Source/CommonFramework/VideoPipeline/Backends/SnapshotManager.h
+    Source/CommonFramework/VideoPipeline/Backends/VideoFrameQt.cpp
     Source/CommonFramework/VideoPipeline/Backends/VideoFrameQt.h
     Source/CommonFramework/VideoPipeline/CameraInfo.h
     Source/CommonFramework/VideoPipeline/Stats/CpuUtilizationStats.cpp
@@ -553,6 +575,8 @@ file(GLOB LIBRARY_SOURCES
     Source/CommonFramework/VideoPipeline/UI/VideoSourceSelectorWidget.cpp
     Source/CommonFramework/VideoPipeline/UI/VideoSourceSelectorWidget.h
     Source/CommonFramework/VideoPipeline/VideoFeed.h
+    Source/CommonFramework/VideoPipeline/VideoFormats.cpp
+    Source/CommonFramework/VideoPipeline/VideoFormats.h
     Source/CommonFramework/VideoPipeline/VideoOverlay.cpp
     Source/CommonFramework/VideoPipeline/VideoOverlay.h
     Source/CommonFramework/VideoPipeline/VideoOverlayOption.cpp
@@ -659,8 +683,8 @@ file(GLOB LIBRARY_SOURCES
     Source/CommonTools/OCR/OCR_NumberReader.h
     Source/CommonTools/OCR/OCR_RawPaddleOCR.cpp
     Source/CommonTools/OCR/OCR_RawPaddleOCR.h
-    Source/CommonTools/OCR/OCR_RawOCR.cpp
-    Source/CommonTools/OCR/OCR_RawOCR.h
+    Source/CommonTools/OCR/OCR_RawTesseractOCR.cpp
+    Source/CommonTools/OCR/OCR_RawTesseractOCR.h
     Source/CommonTools/OCR/OCR_Routines.cpp
     Source/CommonTools/OCR/OCR_Routines.h
     Source/CommonTools/OCR/OCR_SmallDictionaryMatcher.cpp
@@ -709,6 +733,8 @@ file(GLOB LIBRARY_SOURCES
     Source/CommonTools/VisualDetectors/ImageMatchDetector.h
     Source/ComputerPrograms/ComputerProgram.cpp
     Source/ComputerPrograms/ComputerProgram.h
+    Source/ComputerPrograms/UnitTestRunner.cpp
+    Source/ComputerPrograms/UnitTestRunner.h
     Source/ComputerPrograms/Framework/ComputerProgramOption.cpp
     Source/ComputerPrograms/Framework/ComputerProgramOption.h
     Source/ComputerPrograms/Framework/ComputerProgramSession.cpp
@@ -814,8 +840,6 @@ file(GLOB LIBRARY_SOURCES
     Source/Controllers/StandardHid/StandardHid_Keyboard_PABotBase2.h
     Source/Integrations/DiscordIntegrationSettings.cpp
     Source/Integrations/DiscordIntegrationSettings.h
-    Source/Integrations/DiscordIntegrationSettingsWidget.cpp
-    Source/Integrations/DiscordIntegrationSettingsWidget.h
     Source/Integrations/DiscordIntegrationTable.cpp
     Source/Integrations/DiscordIntegrationTable.h
     Source/Integrations/DiscordSettingsOption.cpp
@@ -1109,6 +1133,8 @@ file(GLOB LIBRARY_SOURCES
     Source/NintendoSwitch/DevPrograms/TestProgramComputer.h
     Source/NintendoSwitch/DevPrograms/TestProgramSwitch.cpp
     Source/NintendoSwitch/DevPrograms/TestProgramSwitch.h
+    Source/NintendoSwitch/DevPrograms/WaterfillTemplateMaker.cpp
+    Source/NintendoSwitch/DevPrograms/WaterfillTemplateMaker.h
     Source/NintendoSwitch/Framework/NintendoSwitch_MultiSwitchProgramOption.cpp
     Source/NintendoSwitch/Framework/NintendoSwitch_MultiSwitchProgramOption.h
     Source/NintendoSwitch/Framework/NintendoSwitch_MultiSwitchProgramSession.cpp
@@ -1380,6 +1406,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonBDSP/PokemonBDSP_Panels.h
     Source/PokemonBDSP/PokemonBDSP_Settings.cpp
     Source/PokemonBDSP/PokemonBDSP_Settings.h
+    Source/PokemonBDSP/PokemonBDSP_Tests.cpp
+    Source/PokemonBDSP/PokemonBDSP_Tests.h
     Source/PokemonBDSP/Programs/Eggs/PokemonBDSP_EggAutonomous.cpp
     Source/PokemonBDSP/Programs/Eggs/PokemonBDSP_EggAutonomous.h
     Source/PokemonBDSP/Programs/Eggs/PokemonBDSP_EggAutonomousState.cpp
@@ -1476,10 +1504,13 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Inference/Menus/PokemonFRLG_BagDetector.h
     Source/PokemonFRLG/Inference/Menus/PokemonFRLG_LoadMenuDetector.cpp
     Source/PokemonFRLG/Inference/Menus/PokemonFRLG_LoadMenuDetector.h
+    Source/PokemonFRLG/Inference/Menus/PokemonFRLG_PartyEmptySlotDetector.cpp
+    Source/PokemonFRLG/Inference/Menus/PokemonFRLG_PartyEmptySlotDetector.h
     Source/PokemonFRLG/Inference/Menus/PokemonFRLG_PartyHeldItemDetector.cpp
     Source/PokemonFRLG/Inference/Menus/PokemonFRLG_PartyHeldItemDetector.h
     Source/PokemonFRLG/Inference/Menus/PokemonFRLG_PartyMenuDetector.cpp
     Source/PokemonFRLG/Inference/Menus/PokemonFRLG_PartyMenuDetector.h
+    Source/PokemonFRLG/Inference/Menus/PokemonFRLG_PartySlot.h
     Source/PokemonFRLG/Inference/Menus/PokemonFRLG_TrainerCardDetector.cpp
     Source/PokemonFRLG/Inference/Menus/PokemonFRLG_TrainerCardDetector.h
     Source/PokemonFRLG/Inference/Menus/PokemonFRLG_DexRegistrationDetector.cpp
@@ -1561,6 +1592,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.h
     Source/PokemonFRLG/Programs/PokemonFRLG_RoutePaths.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_RoutePaths.h
+    Source/PokemonFRLG/Programs/PokemonFRLG_SafariOptimalAction.cpp
+    Source/PokemonFRLG/Programs/PokemonFRLG_SafariOptimalAction.h
     Source/PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.h
     Source/PokemonFRLG/Programs/PokemonFRLG_PartyScanner.cpp
@@ -1595,6 +1628,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_LocationsDatabase.h
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_EncountersDatabase.cpp
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_EncountersDatabase.h
+    Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_SeedsDatabase.cpp
+    Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_SeedsDatabase.h
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_SidHelper.cpp
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_SidHelper.h
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_RngHelper.cpp
@@ -1615,6 +1650,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_RoamingLegendaryRng.h
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_EggRng.cpp
     Source/PokemonFRLG/Programs/RngManipulation/PokemonFRLG_EggRng.h
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_SafariOptimalActionTest.cpp
+    Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_SafariOptimalActionTest.h
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_SoundListener.cpp
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_SoundListener.h
     Source/PokemonFRLG/Programs/TestPrograms/PokemonFRLG_ReadStats.cpp
@@ -1661,6 +1698,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonHome/Programs/PokemonHome_GenerateNameOCR.h
     Source/PokemonHome/Programs/PokemonHome_PageSwap.cpp
     Source/PokemonHome/Programs/PokemonHome_PageSwap.h
+    Source/PokemonHome/Programs/TestPrograms/PokemonHome_ReadSummaryScreen.cpp
+    Source/PokemonHome/Programs/TestPrograms/PokemonHome_ReadSummaryScreen.h
     Source/PokemonHome/Resources/PokemonHome_PokeballSprites.cpp
     Source/PokemonHome/Resources/PokemonHome_PokeballSprites.h
     Source/PokemonLA/Inference/Battles/PokemonLA_BattleMenuDetector.cpp
@@ -1703,10 +1742,10 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonLA/Inference/Objects/PokemonLA_BubbleDetector.h
     Source/PokemonLA/Inference/Objects/PokemonLA_ButtonDetector.cpp
     Source/PokemonLA/Inference/Objects/PokemonLA_ButtonDetector.h
-    Source/PokemonLA/Inference/Objects/PokemonLA_DialogueEllipseDetector.cpp
-    Source/PokemonLA/Inference/Objects/PokemonLA_DialogueEllipseDetector.h
-    Source/PokemonLA/Inference/Objects/PokemonLA_DialogueYellowArrowDetector.cpp
-    Source/PokemonLA/Inference/Objects/PokemonLA_DialogueYellowArrowDetector.h
+    Source/PokemonLA/Inference/Objects/PokemonLA_DialogEllipseDetector.cpp
+    Source/PokemonLA/Inference/Objects/PokemonLA_DialogEllipseDetector.h
+    Source/PokemonLA/Inference/Objects/PokemonLA_DialogYellowArrowDetector.cpp
+    Source/PokemonLA/Inference/Objects/PokemonLA_DialogYellowArrowDetector.h
     Source/PokemonLA/Inference/Objects/PokemonLA_FlagDetector.cpp
     Source/PokemonLA/Inference/Objects/PokemonLA_FlagDetector.h
     Source/PokemonLA/Inference/Objects/PokemonLA_FlagTracker.cpp
@@ -1776,6 +1815,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonLA/PokemonLA_TravelLocations.h
     Source/PokemonLA/PokemonLA_WeatherAndTime.cpp
     Source/PokemonLA/PokemonLA_WeatherAndTime.h
+    Source/PokemonLA/PokemonLA_Tests.cpp
+    Source/PokemonLA/PokemonLA_Tests.h
     Source/PokemonLA/Programs/Farming/PokemonLA_IngoBattleGrinder.cpp
     Source/PokemonLA/Programs/Farming/PokemonLA_IngoBattleGrinder.h
     Source/PokemonLA/Programs/Farming/PokemonLA_IngoMoveGrinder.cpp
@@ -2062,6 +2103,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonPokopia/PokemonPokopia_Settings.h
     Source/PokemonPokopia/Programs/PokemonPokopia_CloudIslandReset.cpp
     Source/PokemonPokopia/Programs/PokemonPokopia_CloudIslandReset.h
+    Source/PokemonPokopia/Programs/PokemonPokopia_DailyFarmer.cpp
+    Source/PokemonPokopia/Programs/PokemonPokopia_DailyFarmer.h    
     Source/PokemonPokopia/Programs/PokemonPokopia_PCNavigation.cpp
     Source/PokemonPokopia/Programs/PokemonPokopia_PCNavigation.h
     Source/PokemonRSE/Inference/Dialogs/PokemonRSE_DialogDetector.cpp
@@ -2540,6 +2583,10 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonSwSh/Inference/Dens/PokemonSwSh_RaidCatchDetector.h
     Source/PokemonSwSh/Inference/Dens/PokemonSwSh_RaidLobbyReader.cpp
     Source/PokemonSwSh/Inference/Dens/PokemonSwSh_RaidLobbyReader.h
+    Source/PokemonSwSh/Inference/PokemonSwSh_BoxEggDetector.cpp
+    Source/PokemonSwSh/Inference/PokemonSwSh_BoxEggDetector.h
+    Source/PokemonSwSh/Inference/PokemonSwSh_BoxEmptySlotDetector.cpp
+    Source/PokemonSwSh/Inference/PokemonSwSh_BoxEmptySlotDetector.h
     Source/PokemonSwSh/Inference/PokemonSwSh_BoxGenderDetector.cpp
     Source/PokemonSwSh/Inference/PokemonSwSh_BoxGenderDetector.h
     Source/PokemonSwSh/Inference/PokemonSwSh_BoxNatureDetector.cpp
@@ -2554,6 +2601,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonSwSh/Inference/PokemonSwSh_FishingDetector.h
     Source/PokemonSwSh/Inference/PokemonSwSh_IvJudgeReader.cpp
     Source/PokemonSwSh/Inference/PokemonSwSh_IvJudgeReader.h
+    Source/PokemonSwSh/Inference/PokemonSwSh_MainMenuDetector.cpp
+    Source/PokemonSwSh/Inference/PokemonSwSh_MainMenuDetector.h
     Source/PokemonSwSh/Inference/PokemonSwSh_MarkFinder.cpp
     Source/PokemonSwSh/Inference/PokemonSwSh_MarkFinder.h
     Source/PokemonSwSh/Inference/PokemonSwSh_PokemonSpriteReader.cpp
@@ -2813,6 +2862,7 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonSwSh/Programs/OverworldBot/PokemonSwSh_ShinyHuntAutonomous-Overworld.h
     Source/PokemonSwSh/Programs/PokemonSwSh_BasicCatcher.cpp
     Source/PokemonSwSh/Programs/PokemonSwSh_BasicCatcher.h
+    Source/PokemonSwSh/Programs/PokemonSwSh_BoxHelpers.cpp
     Source/PokemonSwSh/Programs/PokemonSwSh_BoxHelpers.h
     Source/PokemonSwSh/Programs/PokemonSwSh_EncounterDetection.cpp
     Source/PokemonSwSh/Programs/PokemonSwSh_EncounterDetection.h
@@ -2881,6 +2931,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonSwSh/Resources/PokemonSwSh_TypeMatchup.h
     Source/PokemonSwSh/Resources/PokemonSwSh_TypeSprites.cpp
     Source/PokemonSwSh/Resources/PokemonSwSh_TypeSprites.h
+    Source/PokemonSwSh/PokemonSwSh_Tests.cpp
+    Source/PokemonSwSh/PokemonSwSh_Tests.h
     Source/PokemonSwSh/ShinyHuntTracker.cpp
     Source/PokemonSwSh/ShinyHuntTracker.h
     Source/StaticRegistration.h
@@ -2897,14 +2949,10 @@ file(GLOB LIBRARY_SOURCES
     Source/Tests/PokemonFRLG_Tests.h
     Source/Tests/PokemonHome_Tests.cpp
     Source/Tests/PokemonHome_Tests.h
-    Source/Tests/PokemonLA_Tests.cpp
-    Source/Tests/PokemonLA_Tests.h
     Source/Tests/PokemonLZA_Tests.cpp
     Source/Tests/PokemonLZA_Tests.h
     Source/Tests/PokemonSV_Tests.cpp
     Source/Tests/PokemonSV_Tests.h
-    Source/Tests/PokemonSwSh_Tests.cpp
-    Source/Tests/PokemonSwSh_Tests.h
     Source/Tests/TestMap.cpp
     Source/Tests/TestMap.h
     Source/Tests/TestUtils.cpp

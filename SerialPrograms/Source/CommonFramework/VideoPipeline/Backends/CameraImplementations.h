@@ -9,7 +9,6 @@
 
 #include <vector>
 #include "Common/Cpp/Options/EnumDropdownOption.h"
-#include "CommonFramework/Logging/Logger.h"
 #include "CommonFramework/VideoPipeline/VideoSourceDescriptor.h"
 #include "CommonFramework/VideoPipeline/CameraInfo.h"
 
@@ -40,7 +39,9 @@ public:
     virtual std::unique_ptr<VideoSource> make_video_source(
         Logger& logger,
         const CameraInfo& info,
-        Resolution resolution
+        Resolution resolution,
+        VideoFormat format,
+        FramesPerSecond fps
     ) const = 0;
 };
 
