@@ -107,11 +107,16 @@ void flee_battle(ConsoleHandle& console, ProControllerContext& context);
 //   StopBattleStuck  - Stop fired (via stop_on_move_learn or decider). The
 //                      dialog is STILL ACTIVE. Caller must halt the program
 //                      and NOT attempt any further navigation.
+//  evolved_out: optional. Set to true if an evolution sequence was observed
+//  during the battle exit. A Pokemon can evolve without learning a move, so
+//  callers that cache species/moves must rescan on this signal as well as on
+//  WildBattleExit::LearnHandled. Never set to false — initialize it yourself.
 WildBattleExit exit_wild_battle(
     ConsoleHandle& console, ProControllerContext& context,
     bool stop_on_move_learn, bool prevent_evolution,
     const MoveLearnDecider* decider = nullptr,
-    Language language = Language::English
+    Language language = Language::English,
+    bool* evolved_out = nullptr
 );
 
 // Starting from the start menu, a sub-screen of the start menu, or the overworld, navigate to the party screen

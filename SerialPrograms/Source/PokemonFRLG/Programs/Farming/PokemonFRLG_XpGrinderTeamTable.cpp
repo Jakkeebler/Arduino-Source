@@ -241,6 +241,26 @@ OnUnknownOffered XpGrinderTeamTable::on_unknown_for(size_t pokemon) const{
 MoveLearnDecider XpGrinderTeamTable::make_decider(size_t pokemon) const{
     return MoveLearnDecider(desired_for(pokemon), on_unknown_for(pokemon));
 }
+MoveLearnDecider XpGrinderTeamTable::make_decider(
+    size_t pokemon,
+    bool auto_rank,
+    const std::array<std::string, 4>& known_current
+) const{
+    //  Species typing drives the STAB bonus. An unknown/unscanned species just
+    //  means no STAB weighting; ranking by raw power still works.
+    std::vector<std::string> types;
+    const std::string slug = species_for(pokemon);
+    if (!slug.empty()){
+        const SpeciesData* sp = get_species_nothrow(slug);
+        if (sp != nullptr){
+            types = sp->types;
+        }
+    }
+    return MoveLearnDecider(
+        desired_for(pokemon), on_unknown_for(pokemon),
+        auto_rank, std::move(types), known_current
+    );
+}
 
 bool XpGrinderTeamTable::set_species(size_t pokemon, const std::string& slug){
     bool applied = false;
@@ -249,6 +269,29 @@ bool XpGrinderTeamTable::set_species(size_t pokemon, const std::string& slug){
         if (i == pokemon){
             std::string err = row.species.set_by_slug(slug);
             applied = err.empty();
+            return true;  //  found and applied; stop iterating
+        }
+        i++;
+        return false;
+    });
+    return applied;
+}
+
+bool XpGrinderTeamTable::set_desired_moves(size_t pokemon, const std::array<std::string, 4>& move_slugs){
+    bool applied = false;
+    size_t i = 0;
+    run_on_all_rows([&](XpGrinderTeamRow& row){
+        if (i == pokemon){
+            for (int m = 0; m < 4; m++){
+                if (move_slugs[m].empty()){
+                    row.desired_move[m].set_by_index(0);  //  "(none)"
+                }else{
+                    //  Falls back to "(none)" internally if the slug isn't in
+                    //  this row's chain move database.
+                    row.desired_move[m].set_by_slug(move_slugs[m]);
+                }
+            }
+            applied = true;
             return true;  //  found and applied; stop iterating
         }
         i++;

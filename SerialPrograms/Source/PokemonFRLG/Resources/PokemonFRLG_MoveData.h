@@ -28,6 +28,12 @@ struct MoveData{
     std::string type;       //  "normal", "fire", "water", ...
     uint8_t max_pp = 0;
     std::string category;   //  "physical", "special", "status"
+    //  Gen-3 base power. 0 means "no fixed base power": status moves, OHKO
+    //  moves, and fixed/variable-damage moves (Seismic Toss, Night Shade,
+    //  Sonic Boom, Dragon Rage, Counter, Mirror Coat, Flail, Reversal,
+    //  Spit Up, Low Kick, Magnitude, Super Fang, Endeavor). Callers ranking
+    //  moves by damage must treat 0 as "not rankable", not as "useless".
+    uint8_t power = 0;
 };
 
 

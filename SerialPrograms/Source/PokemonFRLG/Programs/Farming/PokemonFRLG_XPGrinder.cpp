@@ -4,6 +4,10 @@
  *
  */
 
+#include "Common/Cpp/Color.h"
+#include "Common/Cpp/Exceptions.h"
+#include "Common/Cpp/Json/JsonValue.h"
+#include "CommonFramework/Logging/Logger.h"
 #include "CommonFramework/Exceptions/OperationFailedException.h"
 #include "CommonFramework/Notifications/ProgramNotifications.h"
 #include "CommonFramework/ProgramStats/StatsTracking.h"
@@ -87,8 +91,16 @@ XPGrinder::XPGrinder()
         LockMode::LOCK_WHILE_RUNNING,
         GrindLocationId::Route1NorthGrass
     )
+    , AUTO_HEAL_LOCATION(
+        "<b>Heal at the Pokémon Center nearest the grind spot</b><br>"
+        "Ignores the Heal Location dropdown below and uses the Center that goes with the grind spot you picked. "
+        "Uncheck to choose a specific Center yourself.",
+        LockMode::LOCK_WHILE_RUNNING,
+        true
+    )
     , HEAL_LOCATION(
-        "<b>Heal Location:</b><br>Which Pokémon Center to heal at. Travel mode dictates how to get there (Fly / Teleport / Walk); the post-heal walk back to the grind spot is always map-driven.",
+        "<b>Heal Location:</b><br>Which Pokémon Center to heal at. Only used when the option above is unchecked. "
+        "Travel mode dictates how to get there (Fly / Teleport / Walk); the post-heal walk back to the grind spot is always map-driven.",
         HealLocationId_Database(),
         LockMode::LOCK_WHILE_RUNNING,
         HealLocationId::ViridianCity
@@ -114,9 +126,10 @@ XPGrinder::XPGrinder()
         RotationMode::disabled
     )
     , PARTY_SIZE(
-        "<b>Party Size:</b><br>Number of Pokémon to rotate through (slots 1–N). Only used when rotation mode is not Disabled.",
+        "<b>Party Size:</b><br>Number of Pokémon to rotate through (slots 1–N). Only used when rotation mode is not Disabled. "
+        "Leave at <b>0</b> to detect the party size from the party menu at program start (recommended — no need to update this as you add Pokémon).",
         LockMode::LOCK_WHILE_RUNNING,
-        1, 1, 6
+        0, 0, 6
     )
     , LANGUAGE(
         "<b>Game Language:</b>",
@@ -125,6 +138,26 @@ XPGrinder::XPGrinder()
     )
     , AUTO_SCAN_ON_START(
         "<b>Auto-scan party at program start:</b><br>Walk the party menu and OCR each Pokémon's species/moves before grinding. Required for the smart move-learn decider to know what each Pokémon currently has.",
+        LockMode::LOCK_WHILE_RUNNING,
+        true
+    )
+    , IMPORT_TEAM_FILE(
+        false,
+        "<b>Team File:</b><br>Path to a team file produced by the <i>Team Scanner</i> program. "
+        "Relative paths are resolved from the program's working directory.",
+        LockMode::LOCK_WHILE_RUNNING,
+        "FRLG_Team.json",
+        "FRLG_Team.json"
+    )
+    , IMPORT_TEAM_BUTTON(
+        "<b>Import the Team File into the table below:</b>",
+        "Import Team From File"
+    )
+    , AUTO_RANK_MOVES(
+        "<b>Auto-pick moves:</b><br>When a level-up offers a move you did not list in the table below, decide by "
+        "STAB-adjusted base power: take it if it beats the weakest unlisted move the " + Pokemon::STRING_POKEMON + " knows. "
+        "Moves you <i>do</i> list are always kept and never forgotten, so use the table to pin anything you want protected "
+        "(HM moves, status moves, coverage picks). Turn this off to decline every unlisted move.",
         LockMode::LOCK_WHILE_RUNNING,
         true
     )
@@ -177,11 +210,15 @@ XPGrinder::XPGrinder()
     PA_ADD_OPTION(PREVENT_EVOLUTION);
     PA_ADD_OPTION(IGNORE_SHINIES);
     PA_ADD_OPTION(GRIND_LOCATION);
+    PA_ADD_OPTION(AUTO_HEAL_LOCATION);
     PA_ADD_OPTION(HEAL_LOCATION);
     PA_ADD_OPTION(ROTATION_MODE);
     PA_ADD_OPTION(PARTY_SIZE);
     PA_ADD_OPTION(LANGUAGE);
     PA_ADD_OPTION(AUTO_SCAN_ON_START);
+    PA_ADD_OPTION(IMPORT_TEAM_FILE);
+    PA_ADD_OPTION(IMPORT_TEAM_BUTTON);
+    PA_ADD_OPTION(AUTO_RANK_MOVES);
     PA_ADD_OPTION(TEAM_TABLE);
     PA_ADD_OPTION(HEAL_ON_FAINT);
     PA_ADD_OPTION(HEAL_ON_OUT_OF_PP);
@@ -190,6 +227,33 @@ XPGrinder::XPGrinder()
     PA_ADD_OPTION(TAKE_VIDEO);
     PA_ADD_OPTION(GO_HOME_WHEN_DONE);
     PA_ADD_OPTION(NOTIFICATIONS);
+
+    IMPORT_TEAM_BUTTON.add_listener(*this);
+}
+XPGrinder::~XPGrinder(){
+    IMPORT_TEAM_BUTTON.remove_listener(*this);
+}
+void XPGrinder::on_press(ButtonCell& button){
+    //  Runs on the GUI thread when the user clicks "Import Team From File".
+    //  Loads the team file into TEAM_TABLE so the user can review/edit it
+    //  before running. The file is the XP Grinder team-table serialization
+    //  written by the Team Scanner program.
+    std::string path = IMPORT_TEAM_FILE;
+    if (path.empty()){
+        path = "FRLG_Team.json";
+    }
+    try{
+        JsonValue json = load_json_file(path);
+        TEAM_TABLE.load_json(json);
+        global_logger_tagged().log(
+            "XP Grinder: imported team from '" + path + "'.", COLOR_BLUE
+        );
+    }catch (const Exception& e){
+        global_logger_tagged().log(
+            "XP Grinder: failed to import team from '" + path + "': " + e.message(),
+            COLOR_RED
+        );
+    }
 }
 
 namespace{
@@ -347,17 +411,67 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
 
     home_black_border_check(env.console, context);
 
-    const bool multi_party = (ROTATION_MODE != RotationMode::disabled) && (PARTY_SIZE > 1);
-    const int party_size = multi_party ? (int)(uint64_t)PARTY_SIZE : 1;
-
     auto bool_str = [](bool b){ return b ? "true" : "false"; };
     env.log("Starting XP Grinder.", COLOR_BLUE);
+
+    //  Resolve the heal target up front so the whole run uses one value.
+    const GrindLocationId grind_location = GRIND_LOCATION;
+    const HealLocationId heal_location = AUTO_HEAL_LOCATION
+        ? nearest_heal_location(grind_location)
+        : (HealLocationId)HEAL_LOCATION;
+
+    //  Resolve the party size before anything depends on it. PARTY_SIZE == 0
+    //  means "read it off the party menu", which is the default so the user
+    //  never has to keep this option in sync with their actual team.
+    //
+    //  When auto-scanning we let scan_party() do the detection so the party
+    //  menu is only opened once; otherwise we open it just to count slots.
+    int party_size = (int)(uint64_t)PARTY_SIZE;
+    const bool rotation_enabled = (ROTATION_MODE != RotationMode::disabled);
+    std::vector<PartyScanResult> startup_scan;
+    bool startup_scan_ok = false;
+
+    if (AUTO_SCAN_ON_START){
+        env.log(
+            party_size == 0
+                ? std::string("Auto-scanning party (size auto-detected) before grinding.")
+                : "Auto-scanning party (" + std::to_string(party_size) + " slot(s)) before grinding.",
+            COLOR_BLUE
+        );
+        try{
+            startup_scan = scan_party(env, context, LANGUAGE, party_size);
+            startup_scan_ok = true;
+            if (party_size == 0){
+                party_size = (int)startup_scan.size();
+            }
+        }catch (OperationFailedException& e){
+            env.log(std::string("Auto-scan failed: ") + e.message() + ". Continuing with empty move cache (decider will treat all moves as unknown).", COLOR_RED);
+            stats.errors++;
+        }
+    }
+
+    if (party_size == 0){
+        //  Either auto-scan is off, or it threw before detecting a size.
+        try{
+            party_size = detect_party_size(env, context);
+        }catch (OperationFailedException& e){
+            env.log(std::string("Party-size detection failed: ") + e.message() + ". Falling back to 1 (single-Pokemon mode).", COLOR_RED);
+            stats.errors++;
+            party_size = 1;
+        }
+    }
+    if (party_size < 1) party_size = 1;
+    if (party_size > 6) party_size = 6;
+
+    const bool multi_party = rotation_enabled && (party_size > 1);
+
     env.log(
         "Config: MAX_BATTLES=" + std::to_string((uint64_t)MAX_BATTLES) +
         "; PREVENT_EVOLUTION=" + bool_str(PREVENT_EVOLUTION) +
         "; IGNORE_SHINIES=" + bool_str(IGNORE_SHINIES) +
-        "; GRIND_LOCATION=" + GrindLocationId_Database().find((GrindLocationId)GRIND_LOCATION)->display +
-        "; HEAL_LOCATION=" + HealLocationId_Database().find((HealLocationId)HEAL_LOCATION)->display +
+        "; GRIND_LOCATION=" + GrindLocationId_Database().find(grind_location)->display +
+        "; HEAL_LOCATION=" + HealLocationId_Database().find(heal_location)->display +
+        (AUTO_HEAL_LOCATION ? " (auto)" : " (manual)") +
         "; ROTATION_MODE=" + std::to_string((int)(RotationMode)ROTATION_MODE) +
         "; PARTY_SIZE=" + std::to_string(party_size) +
         "; HEAL_ON_FAINT=" + bool_str(HEAL_ON_FAINT) +
@@ -372,32 +486,25 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
     bool stop_program = false;
     PartyState party(party_size);
 
-    if (AUTO_SCAN_ON_START){
-        env.log("Auto-scanning party (" + std::to_string(party_size) + " slot(s)) before grinding.", COLOR_BLUE);
-        try{
-            std::vector<PartyScanResult> scan = scan_party(env, context, LANGUAGE, party_size);
-            //  Rotation index = scan order (slot_1indexed - 1) at startup.
-            for (const PartyScanResult& r : scan){
-                int rot = r.slot_1indexed - 1;
-                if (rot >= 0 && rot < 6){
-                    party.current_moves[rot] = r.read.move_slugs;
-                    //  Auto-update the team-table species cell when the scan
-                    //  identifies a species that's different from (or absent
-                    //  in) the row.
-                    if (!r.species_slug.empty() && r.species_slug != TEAM_TABLE.species_for((size_t)rot)){
-                        env.log(
-                            "Slot " + std::to_string(r.slot_1indexed) +
-                            ": detected species '" + r.species_slug +
-                            "' (was '" + TEAM_TABLE.species_for((size_t)rot) + "'). Updating team table.",
-                            COLOR_BLUE
-                        );
-                        TEAM_TABLE.set_species((size_t)rot, r.species_slug);
-                    }
+    if (startup_scan_ok){
+        //  Rotation index = scan order (slot_1indexed - 1) at startup.
+        for (const PartyScanResult& r : startup_scan){
+            int rot = r.slot_1indexed - 1;
+            if (rot >= 0 && rot < 6){
+                party.current_moves[rot] = r.read.move_slugs;
+                //  Auto-update the team-table species cell when the scan
+                //  identifies a species that's different from (or absent
+                //  in) the row.
+                if (!r.species_slug.empty() && r.species_slug != TEAM_TABLE.species_for((size_t)rot)){
+                    env.log(
+                        "Slot " + std::to_string(r.slot_1indexed) +
+                        ": detected species '" + r.species_slug +
+                        "' (was '" + TEAM_TABLE.species_for((size_t)rot) + "'). Updating team table.",
+                        COLOR_BLUE
+                    );
+                    TEAM_TABLE.set_species((size_t)rot, r.species_slug);
                 }
             }
-        }catch (OperationFailedException& e){
-            env.log(std::string("Auto-scan failed: ") + e.message() + ". Continuing with empty move cache (decider will treat all moves as unknown).", COLOR_RED);
-            stats.errors++;
         }
     }
 
@@ -465,7 +572,10 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
             bool battle_ongoing = true;
             while (battle_ongoing){
                 size_t table_index = (size_t)party.current_rotation;
-                MoveLearnDecider decider = TEAM_TABLE.make_decider(table_index);
+                MoveLearnDecider decider = TEAM_TABLE.make_decider(
+                    table_index, !!AUTO_RANK_MOVES,
+                    party.current_moves[party.current_rotation]
+                );
                 std::vector<size_t> priority = decider.battle_move_priority(
                     party.current_moves[party.current_rotation]
                 );
@@ -475,9 +585,10 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
 
                 case BattleResult::opponentfainted:{
                     stats.battles_won++;
+                    bool evolved = false;
                     WildBattleExit exit_result = exit_wild_battle(
                         env.console, context, false, !!PREVENT_EVOLUTION,
-                        &decider, LANGUAGE
+                        &decider, LANGUAGE, &evolved
                     );
 
                     //  Stop signal: dialog is still active, do not navigate.
@@ -525,8 +636,18 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         "Grinding experience."
                     );
 
-                    if (exit_result == WildBattleExit::LearnHandled){
-                        env.log("Move learn occurred. Rescanning slot " + std::to_string(party.current_rotation + 1) + " to refresh move cache.", COLOR_BLUE);
+                    //  Rescan whenever the slot's species or moveset can have
+                    //  changed. A level-up evolution changes the species (and
+                    //  therefore the learnset the decider reasons about) even
+                    //  when no move was offered, so `evolved` must trigger a
+                    //  rescan on its own.
+                    if (exit_result == WildBattleExit::LearnHandled || evolved){
+                        env.log(
+                            std::string(evolved ? "Evolution" : "Move learn") +
+                            " occurred. Rescanning slot " + std::to_string(party.current_rotation + 1) +
+                            " to refresh species and move cache.",
+                            COLOR_BLUE
+                        );
                         try{
                             PartyScanResult r = scan_party_slot(
                                 env, context, LANGUAGE, party.current_rotation + 1
@@ -554,7 +675,7 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         uint64_t won = stats.battles_won.load();
                         if (won % BATTLES_PER_HEAL_TRIP == 0){
                             env.log("Cadence threshold reached (" + std::to_string(won) + " battles won). Taking heal trip.", COLOR_BLUE);
-                            routine_heal_trip(env, context, TRAVEL_METHOD, GRIND_LOCATION, HEAL_LOCATION);
+                            routine_heal_trip(env, context, TRAVEL_METHOD, grind_location, heal_location);
                             party = PartyState(party_size);
                             stats.healing_trips++;
                             failed_encounters = 0;
@@ -632,7 +753,7 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         //  All fainted (whiteout) or single-Pokémon mode.
                         if (HEAL_ON_FAINT || multi_party){
                             env.log("All party fainted — whiteout. Resuming via PC.", COLOR_BLUE);
-                            whiteout_resume(env, context, GRIND_LOCATION);
+                            whiteout_resume(env, context, grind_location);
                             party = PartyState(party_size);
                             stats.healing_trips++;
                             failed_encounters = 0;
@@ -662,7 +783,7 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         party.current_rotation = next;
                     }else if (HEAL_ON_OUT_OF_PP || (multi_party && party.all_need_heal(true))){
                         env.log("Trigger: move 1 out of PP. Taking routine heal trip.", COLOR_BLUE);
-                        routine_heal_trip(env, context, TRAVEL_METHOD, GRIND_LOCATION, HEAL_LOCATION);
+                        routine_heal_trip(env, context, TRAVEL_METHOD, grind_location, heal_location);
                         party = PartyState(party_size);
                         stats.healing_trips++;
                         failed_encounters = 0;

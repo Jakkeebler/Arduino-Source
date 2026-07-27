@@ -23,6 +23,7 @@
 
 #include <array>
 #include <string>
+#include <vector>
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -47,9 +48,26 @@ public:
 
     //  desired_slugs: ordered priority. Slot 0 = highest priority, slot 3 = lowest.
     //  Empty strings mean "no preference for this priority slot" — they never match.
+    //  Moves in this list are "pinned": they are always accepted when offered
+    //  and are never chosen to be forgotten.
+    //
+    //  auto_rank: when true, moves that are NOT pinned are judged by
+    //  STAB-adjusted base power instead of being blanket-declined. This lets
+    //  the grinder improve a moveset the user hasn't fully specified.
+    //  species_types: the Pokemon's Gen-3 typing, used for the STAB bonus.
+    //  Empty means "no STAB information" — ranking still works, just without
+    //  the 1.5x same-type bonus.
+    //  known_current: the caller's cached view of the Pokemon's current four
+    //  moves. Auto-ranking needs this to answer accept-vs-decline, because the
+    //  game only shows the real moveset after the offer is accepted. If every
+    //  entry is empty the decider has no basis to compare and declines
+    //  unpinned offers.
     MoveLearnDecider(
         std::array<std::string, 4> desired_slugs,
-        OnUnknownOffered on_unknown = OnUnknownOffered::Decline
+        OnUnknownOffered on_unknown = OnUnknownOffered::Decline,
+        bool auto_rank = false,
+        std::vector<std::string> species_types = {},
+        std::array<std::string, 4> known_current = {}
     );
 
     //  First decision: should we accept or decline the offered move?
@@ -81,6 +99,17 @@ public:
 
     const std::array<std::string, 4>& desired() const{ return m_desired; }
 
+    //  Damage-ranking score for one move, in tenths so the STAB multiplier
+    //  stays exact in integer math (base power x10, x1.5 again for STAB).
+    //  Returns 0 for anything that cannot be ranked by raw damage: empty or
+    //  unknown slugs, status moves, and moves with no fixed base power (OHKO,
+    //  Seismic Toss, Night Shade, Counter, Flail, Low Kick, ...). A 0 here
+    //  means "don't rank me", NOT "worthless".
+    int move_score(const std::string& slug) const;
+
+    //  True if `slug` appears in the desired list, i.e. the user pinned it.
+    bool is_pinned(const std::string& slug) const;
+
 private:
     //  Returns the position of `slug` in m_desired (0..3, 0 = highest priority),
     //  or INT_MAX if not found / slug is empty.
@@ -88,6 +117,9 @@ private:
 
     std::array<std::string, 4> m_desired;
     OnUnknownOffered m_on_unknown;
+    bool m_auto_rank;
+    std::vector<std::string> m_species_types;
+    std::array<std::string, 4> m_known_current;
 };
 
 

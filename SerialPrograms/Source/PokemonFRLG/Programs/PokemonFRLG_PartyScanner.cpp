@@ -5,6 +5,7 @@
  */
 
 #include <chrono>
+#include <set>
 #include "Common/Cpp/Color.h"
 #include "CommonFramework/Exceptions/OperationFailedException.h"
 #include "CommonFramework/VideoPipeline/VideoFeed.h"
@@ -21,6 +22,7 @@
 #include "PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.h"
 #include "PokemonFRLG/PokemonFRLG_Navigation.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_SpeciesData.h"
+#include "PokemonFRLG/Inference/PokemonFRLG_PokemonSpriteReader.h"
 #include "PokemonFRLG_PartyScanner.h"
 
 namespace PokemonAutomation{
@@ -31,6 +33,18 @@ using namespace std::chrono_literals;
 
 
 namespace{
+
+//  The full set of FRLG species slugs, used as the sprite-matcher subset.
+const std::set<std::string>& all_species_slug_set(){
+    static const std::set<std::string> set = []{
+        std::set<std::string> s;
+        for (const SpeciesData& sp : all_species()){
+            s.insert(sp.slug);
+        }
+        return s;
+    }();
+    return set;
+}
 
 //  Move the party-menu cursor from `from` to `to` (both 1-indexed) using the
 //  layout convention from switch_party_lead_overworld:
@@ -178,7 +192,7 @@ void exit_summary_to_party(ConsoleHandle& console, ProControllerContext& context
 PartyScanResult read_current_slot(
     SingleSwitchProgramEnvironment& env, ProControllerContext& context,
     Language language, int slot_1indexed,
-    const PartySummaryReader& reader
+    const PartySummaryReader& reader, SummarySpriteReader& sprite_reader
 ){
     open_slot_submenu(env.console, context);
     enter_summary(env.console, context);
@@ -190,6 +204,39 @@ PartyScanResult read_current_slot(
     {
         VideoSnapshot screen1 = env.console.video().snapshot();
         reader.read_page1(env.logger(), language, screen1, result.read);
+
+        //  Species identification: sprite match (primary) cross-checked against
+        //  the page-1 Pokedex-number OCR. Sprite matching is robust to the small
+        //  in-game font that the digit OCR struggles with; the dex number is the
+        //  tiebreaker / fallback when the sprite is ambiguous or unreadable.
+        std::string sprite_slug;
+        double sprite_distance = -1.0;
+        {
+            ImageMatch::ImageMatchResult sprite_result = sprite_reader.read(screen1);
+            if (!sprite_result.results.empty()){
+                sprite_slug = sprite_result.results.begin()->second;
+                sprite_distance = sprite_result.results.begin()->first;
+            }
+        }
+
+        std::string dex_slug;
+        if (result.read.dex_no >= 0){
+            const SpeciesData* sp = get_species_by_dex((uint16_t)result.read.dex_no);
+            if (sp != nullptr){
+                dex_slug = sp->slug;
+            }
+        }
+
+        if (!sprite_slug.empty() && !dex_slug.empty() && sprite_slug != dex_slug){
+            env.log(
+                "Slot " + std::to_string(slot_1indexed) + ": species mismatch - sprite='" +
+                sprite_slug + "' (dist=" + std::to_string(sprite_distance) + ") vs dex#" +
+                std::to_string(result.read.dex_no) + "->'" + dex_slug + "'. Using sprite.",
+                COLOR_ORANGE
+            );
+        }
+        //  Prefer the sprite match; fall back to the dex-number lookup.
+        result.species_slug = !sprite_slug.empty() ? sprite_slug : dex_slug;
     }
 
     env.log("Slot " + std::to_string(slot_1indexed) + ": navigating to page 3.");
@@ -199,13 +246,6 @@ PartyScanResult read_current_slot(
     {
         VideoSnapshot screen3 = env.console.video().snapshot();
         reader.read_page3_moves(env.logger(), language, screen3, result.read);
-    }
-
-    if (result.read.dex_no >= 0){
-        const SpeciesData* sp = get_species_by_dex((uint16_t)result.read.dex_no);
-        if (sp != nullptr){
-            result.species_slug = sp->slug;
-        }
     }
 
     env.log("Slot " + std::to_string(slot_1indexed) + ": exiting Summary.");
@@ -229,19 +269,47 @@ void close_party_menu(ConsoleHandle& console, ProControllerContext& context){
 }  //  namespace
 
 
+int detect_party_size(
+    SingleSwitchProgramEnvironment& env, ProControllerContext& context
+){
+    env.log("detect_party_size: opening party menu.");
+    open_party_menu_from_overworld(env.console, context);
+    context.wait_for_all_requests();
+    int size = (int)detect_last_occupied_party_slot(env.console) + 1;
+    env.log("detect_party_size: detected " + std::to_string(size) + " occupied slot(s).");
+    close_party_menu(env.console, context);
+    return size;
+}
+
+
 std::vector<PartyScanResult> scan_party(
     SingleSwitchProgramEnvironment& env, ProControllerContext& context,
     Language language, int party_size
 ){
-    if (party_size < 1) party_size = 1;
-    if (party_size > 6) party_size = 6;
+    const bool auto_detect = (party_size <= 0);
+    if (!auto_detect){
+        if (party_size < 1) party_size = 1;
+        if (party_size > 6) party_size = 6;
+    }
 
-    env.log("scan_party: opening party menu (target slots 1.." + std::to_string(party_size) + ").");
+    env.log(
+        auto_detect
+            ? std::string("scan_party: opening party menu (auto-detecting party size).")
+            : "scan_party: opening party menu (target slots 1.." + std::to_string(party_size) + ")."
+    );
     open_party_menu_from_overworld(env.console, context);
 
+    if (auto_detect){
+        context.wait_for_all_requests();
+        party_size = (int)detect_last_occupied_party_slot(env.console) + 1;
+        env.log("scan_party: detected party size = " + std::to_string(party_size) + ".");
+    }
+
     PartySummaryReader reader;
+    SummarySpriteReader sprite_reader(all_species_slug_set());
     VideoOverlaySet overlays(env.console.overlay());
     reader.make_overlays(overlays);
+    sprite_reader.make_overlays(overlays);
 
     std::vector<PartyScanResult> results;
     results.reserve((size_t)party_size);
@@ -253,7 +321,7 @@ std::vector<PartyScanResult> scan_party(
             context.wait_for_all_requests();
             current_slot = slot;
         }
-        PartyScanResult r = read_current_slot(env, context, language, slot, reader);
+        PartyScanResult r = read_current_slot(env, context, language, slot, reader, sprite_reader);
         env.log(
             "Slot " + std::to_string(slot) + " result: lv=" +
             (r.read.level  >= 0 ? std::to_string(r.read.level)  : "?") +
@@ -284,14 +352,16 @@ PartyScanResult scan_party_slot(
     open_party_menu_from_overworld(env.console, context);
 
     PartySummaryReader reader;
+    SummarySpriteReader sprite_reader(all_species_slug_set());
     VideoOverlaySet overlays(env.console.overlay());
     reader.make_overlays(overlays);
+    sprite_reader.make_overlays(overlays);
 
     if (slot_1indexed != 1){
         move_cursor_between_slots(context, 1, slot_1indexed);
         context.wait_for_all_requests();
     }
-    PartyScanResult r = read_current_slot(env, context, language, slot_1indexed, reader);
+    PartyScanResult r = read_current_slot(env, context, language, slot_1indexed, reader, sprite_reader);
 
     env.log("scan_party_slot: closing party menu.");
     close_party_menu(env.console, context);

@@ -37,12 +37,22 @@ struct PartyScanResult{
 };
 
 
+//  Open the party menu, count how many slots are occupied, and return to the
+//  overworld. Returns a value in [1, 6]. Use this instead of asking the user
+//  for their party size.
+int detect_party_size(
+    SingleSwitchProgramEnvironment& env, ProControllerContext& context
+);
+
+
 //  Scan slots [1..party_size] starting from the overworld. Walks the party
 //  menu, opens each Pokemon's Summary, reads page 1 and page 3, and returns
 //  to the overworld. Throws OperationFailedException if menu navigation
 //  cannot be completed.
 //
-//  Callers should pass party_size in [1, 6].
+//  Callers should pass party_size in [1, 6], or 0 to auto-detect the party
+//  size from the menu (results.size() is then the detected size). Auto-detect
+//  reuses the same menu-open, so it costs nothing extra over passing a size.
 std::vector<PartyScanResult> scan_party(
     SingleSwitchProgramEnvironment& env, ProControllerContext& context,
     Language language, int party_size

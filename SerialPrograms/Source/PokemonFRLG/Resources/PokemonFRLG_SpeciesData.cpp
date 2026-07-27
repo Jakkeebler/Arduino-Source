@@ -44,6 +44,18 @@ FrlgSpeciesDatabase::FrlgSpeciesDatabase(){
         SpeciesData entry;
         entry.slug = fields.get_string_throw("slug", path);
         fields.read_integer(entry.dex_no, "dex", 0, 65535);
+        //  Older Species.json files predate "types"; leave the list empty
+        //  rather than failing to load. Callers must handle an empty typing
+        //  (it just means "no STAB information available").
+        const JsonArray* types = fields.get_array("types");
+        if (types != nullptr){
+            for (const JsonValue& t : *types){
+                const std::string* s = t.to_string();
+                if (s != nullptr && !s->empty()){
+                    entry.types.push_back(*s);
+                }
+            }
+        }
 
         size_t index = ordered.size();
         slug_to_index.emplace(entry.slug, index);

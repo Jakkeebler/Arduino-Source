@@ -15,6 +15,7 @@
 #include "Programs/Farming/PokemonFRLG_PickupFarmer.h"
 #include "Programs/Farming/PokemonFRLG_EvTrainer.h"
 #include "Programs/Farming/PokemonFRLG_XPGrinder.h"
+#include "Programs/Farming/PokemonFRLG_TeamScanner.h"
 #include "Programs/ShinyHunting/PokemonFRLG_GiftReset.h"
 #include "Programs/ShinyHunting/PokemonFRLG_LegendaryReset.h"
 #include "Programs/ShinyHunting/PokemonFRLG_LegendaryRunAway.h"
@@ -66,6 +67,7 @@ std::vector<PanelEntry> PanelListFactory::make_panels() const{
     ret.emplace_back(make_single_switch_program<EvTrainer_Descriptor, EvTrainer>());
     ret.emplace_back(make_single_switch_program<LuckyEggFarmer_Descriptor, LuckyEggFarmer>());
     ret.emplace_back(make_single_switch_program<XPGrinder_Descriptor, XPGrinder>());
+    ret.emplace_back(make_single_switch_program<TeamScanner_Descriptor, TeamScanner>());
     ret.emplace_back(make_single_switch_program<ItemDuplication_Descriptor, ItemDuplication>());
 
     //ret.emplace_back("---- General ----");

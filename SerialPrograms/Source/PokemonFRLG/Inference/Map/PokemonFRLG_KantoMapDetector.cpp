@@ -5,6 +5,8 @@
  */
 
 #include <atomic>
+#include <algorithm>
+#include <cmath>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include "Common/Cpp/Filesystem.h"
@@ -52,6 +54,15 @@ constexpr int TILE_PX = 16;
 constexpr int VIEWPORT_W_TILES = 15;
 constexpr int VIEWPORT_H_TILES = 10;
 constexpr const char* MAP_RELATIVE_PATH = "PokemonFRLG/Maps/Kanto-Combined.png";
+
+//  Ambiguity rejection: when measuring the second-best correlation peak, ignore
+//  everything within this radius of the best peak (that area is the same peak's
+//  shoulder, not a distinct location).
+constexpr int SUPPRESS_RADIUS_PX = 4 * TILE_PX;
+//  The best peak must beat the next *distinct* peak by at least this much
+//  (TM_CCOEFF_NORMED units) to be accepted. Guards against repetitive terrain
+//  where several map locations look near-identical.
+constexpr double AMBIGUITY_MARGIN = 0.06;
 
 cv::Rect detect_letterbox_roi(const cv::Mat& bgr, int threshold = 10){
     cv::Mat gray;
@@ -139,6 +150,7 @@ std::optional<KantoPosition> KantoMapDetector::locate(
     //  bounds and large enough to fit the template.
     cv::Mat search_image;
     int search_offset_x = 0, search_offset_y = 0;
+    bool used_hint = false;
     if (hint_radius_tiles > 0 && hint_x >= 0 && hint_y >= 0){
         int radius_px = hint_radius_tiles * TILE_PX;
         int sx = hint_x * TILE_PX - radius_px;
@@ -154,30 +166,104 @@ std::optional<KantoPosition> KantoMapDetector::locate(
             search_image = m_combined(cv::Rect(sx, sy, sw, sh));
             search_offset_x = sx;
             search_offset_y = sy;
+            used_hint = true;
         }
     }
     if (search_image.empty()){
         search_image = m_combined;
     }
 
-    cv::Mat result;
-    cv::matchTemplate(search_image, templ, result, cv::TM_CCOEFF_NORMED);
+    //  Run matchTemplate over `search` (with global pixel offset off_x/off_y),
+    //  returning the best peak's confidence, the best *distinct* competing peak
+    //  (for ambiguity rejection), and the sub-pixel-refined global center.
+    struct MatchResult{
+        double best;
+        double second;
+        double center_px_x;
+        double center_px_y;
+    };
+    auto run_match = [&](const cv::Mat& search, int off_x, int off_y) -> MatchResult{
+        cv::Mat result;
+        cv::matchTemplate(search, templ, result, cv::TM_CCOEFF_NORMED);
 
-    double max_val = 0.0;
-    cv::Point max_loc;
-    cv::minMaxLoc(result, nullptr, &max_val, nullptr, &max_loc);
+        double max_val = 0.0;
+        cv::Point max_loc;
+        cv::minMaxLoc(result, nullptr, &max_val, nullptr, &max_loc);
 
-    if (max_val < min_confidence){
+        //  Sub-tile refinement: fit a parabola through the peak and its two
+        //  neighbors on each axis to recover a fractional offset in [-1, 1].
+        double dx = 0.0, dy = 0.0;
+        if (max_loc.x > 0 && max_loc.x < result.cols - 1){
+            float l = result.at<float>(max_loc.y, max_loc.x - 1);
+            float c = result.at<float>(max_loc.y, max_loc.x);
+            float r = result.at<float>(max_loc.y, max_loc.x + 1);
+            double denom = double(l) - 2.0 * c + r;
+            if (std::abs(denom) > 1e-6){ dx = 0.5 * (double(l) - r) / denom; }
+        }
+        if (max_loc.y > 0 && max_loc.y < result.rows - 1){
+            float u = result.at<float>(max_loc.y - 1, max_loc.x);
+            float c = result.at<float>(max_loc.y, max_loc.x);
+            float d = result.at<float>(max_loc.y + 1, max_loc.x);
+            double denom = double(u) - 2.0 * c + d;
+            if (std::abs(denom) > 1e-6){ dy = 0.5 * (double(u) - d) / denom; }
+        }
+        dx = std::clamp(dx, -1.0, 1.0);
+        dy = std::clamp(dy, -1.0, 1.0);
+
+        //  Second-best distinct peak: blank a neighborhood around the best,
+        //  then take the next maximum. If the window is small enough that the
+        //  neighborhood covers it entirely, `second` stays -1 (no competitor).
+        double second_val = -1.0;
+        cv::Rect zero(
+            std::max(0, max_loc.x - SUPPRESS_RADIUS_PX),
+            std::max(0, max_loc.y - SUPPRESS_RADIUS_PX),
+            0, 0
+        );
+        zero.width  = std::min(result.cols, max_loc.x + SUPPRESS_RADIUS_PX + 1) - zero.x;
+        zero.height = std::min(result.rows, max_loc.y + SUPPRESS_RADIUS_PX + 1) - zero.y;
+        if (zero.width < result.cols || zero.height < result.rows){
+            cv::Mat suppressed = result.clone();
+            suppressed(zero).setTo(cv::Scalar(-1.0));
+            cv::minMaxLoc(suppressed, nullptr, &second_val, nullptr, nullptr);
+        }
+
+        MatchResult m;
+        m.best = max_val;
+        m.second = second_val;
+        m.center_px_x = (max_loc.x + dx) + off_x + templ.cols / 2.0;
+        m.center_px_y = (max_loc.y + dy) + off_y + templ.rows / 2.0;
+        return m;
+    };
+
+    //  Diagnostic callers pass a negative min_confidence to force the raw best
+    //  guess; only gate on ambiguity for real (positive-threshold) lookups.
+    const bool apply_ambiguity = min_confidence > 0.0;
+
+    MatchResult m = run_match(search_image, search_offset_x, search_offset_y);
+    bool from_full_map = !used_hint;
+
+    //  Auto-expand: if a hinted (windowed) search found no confident match, the
+    //  player may have moved outside the window. Retry on the full map and keep
+    //  whichever is stronger, so a single missed hint doesn't drop a poll.
+    if (used_hint && m.best < min_confidence){
+        MatchResult full = run_match(m_combined, 0, 0);
+        if (full.best > m.best){ m = full; from_full_map = true; }
+    }
+
+    if (m.best < min_confidence){
+        return std::nullopt;
+    }
+    //  Ambiguity gate only on global (unhinted) fixes: a hinted window already
+    //  pins down location, so a nearby look-alike inside it is safe to accept.
+    //  A cold-start full-map fix must clearly beat any other map location.
+    if (apply_ambiguity && from_full_map && (m.best - m.second) < AMBIGUITY_MARGIN){
         return std::nullopt;
     }
 
-    int center_px_x = max_loc.x + search_offset_x + templ.cols / 2;
-    int center_px_y = max_loc.y + search_offset_y + templ.rows / 2;
-
     KantoPosition pos;
-    pos.tile_x = center_px_x / TILE_PX;
-    pos.tile_y = center_px_y / TILE_PX;
-    pos.confidence = max_val;
+    pos.tile_x = int(m.center_px_x / TILE_PX);
+    pos.tile_y = int(m.center_px_y / TILE_PX);
+    pos.confidence = m.best;
     return pos;
 }
 

@@ -646,7 +646,8 @@ WildBattleExit exit_wild_battle(
     ConsoleHandle& console, ProControllerContext& context,
     bool stop_on_move_learn, bool prevent_evolution,
     const MoveLearnDecider* decider,
-    Language language
+    Language language,
+    bool* evolved_out
 ){
     // For move learning, there are two dialog selection boxes in a row.
     // Decline path: press B on the first, then A on the second (don't learn).
@@ -723,6 +724,12 @@ WildBattleExit exit_wild_battle(
                 if (!prevent_evolution){
                     // make sure B isn't pressed too soon, which would cancel the evolution
                     pbf_wait(context, 20000ms);
+                    //  Only report an evolution that we actually allowed to
+                    //  complete. When prevent_evolution is set we cancel it,
+                    //  so the species is unchanged and no rescan is needed.
+                    if (evolved_out != nullptr){
+                        *evolved_out = true;
+                    }
                 }
                 rejected_first_box = false;
                 continue; // press B as in other cases, and handle any move learning loops that might come up

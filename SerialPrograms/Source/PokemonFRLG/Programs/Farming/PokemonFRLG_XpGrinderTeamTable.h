@@ -82,8 +82,26 @@ public:
     //  or the slug isn't in the species dropdown database.
     bool set_species(size_t pokemon, const std::string& slug);
 
+    //  Set a row's four desired-move cells. Used by the Team Scanner to seed
+    //  the table from a party scan (the scanned current moves become the
+    //  desired set). Call set_species first so the row's per-chain move
+    //  database already contains these moves; any slug not in that database
+    //  (or empty) collapses to "(none)". Returns false if pokemon is out of
+    //  range.
+    bool set_desired_moves(size_t pokemon, const std::array<std::string, 4>& move_slugs);
+
     //  Build a MoveLearnDecider from a row's snapshot. Caller owns the result.
     MoveLearnDecider make_decider(size_t pokemon) const;
+
+    //  As above, but enables damage-based auto-ranking for moves the user did
+    //  not pin in the table. `known_current` is the caller's cached view of the
+    //  Pokemon's four current moves (needed to judge accept-vs-decline).
+    //  Species typing for the STAB bonus is read from the row's species cell.
+    MoveLearnDecider make_decider(
+        size_t pokemon,
+        bool auto_rank,
+        const std::array<std::string, 4>& known_current
+    ) const;
 
     //  Validate desired moves against the row's species evolution-chain
     //  learnset. Returns a list of human-readable warnings (one per invalid

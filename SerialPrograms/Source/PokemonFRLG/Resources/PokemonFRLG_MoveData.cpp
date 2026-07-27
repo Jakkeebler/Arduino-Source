@@ -49,6 +49,9 @@ FrlgMoveDatabase::FrlgMoveDatabase(){
         fields.read_string(entry.type, "type");
         fields.read_string(entry.category, "category");
         fields.read_integer(entry.max_pp, "pp", 0, 255);
+        //  Older Moves.json files predate the "power" field; default to 0
+        //  (unrankable) rather than failing to load the whole database.
+        fields.read_integer(entry.power, "power", 0, 255);
 
         size_t index = ordered.size();
         display_to_slug.emplace(entry.display_eng, slug);

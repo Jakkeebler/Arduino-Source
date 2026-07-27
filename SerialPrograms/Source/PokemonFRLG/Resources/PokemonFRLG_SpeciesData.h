@@ -26,6 +26,10 @@ namespace PokemonFRLG{
 struct SpeciesData{
     std::string slug;
     uint16_t dex_no = 0;
+    //  Gen-3 typing: 1 or 2 entries ("fire", "flying", ...). Note these are
+    //  the FRLG-era types, not modern ones -- Clefairy/Jigglypuff lines are
+    //  pure Normal (no Fairy type in Gen 3).
+    std::vector<std::string> types;
 };
 
 

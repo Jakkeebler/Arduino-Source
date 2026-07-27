@@ -10,6 +10,8 @@
 #include "Common/Cpp/Options/SimpleIntegerOption.h"
 #include "Common/Cpp/Options/BooleanCheckBoxOption.h"
 #include "Common/Cpp/Options/EnumDropdownOption.h"
+#include "Common/Cpp/Options/StringOption.h"
+#include "Common/Cpp/Options/ButtonOption.h"
 #include "CommonFramework/Notifications/EventNotificationsTable.h"
 #include "CommonTools/Options/LanguageOCROption.h"
 #include "NintendoSwitch/NintendoSwitch_SingleSwitchProgram.h"
@@ -28,7 +30,7 @@ public:
     virtual std::unique_ptr<StatsTracker> make_stats() const override;
 };
 
-class XPGrinder : public SingleSwitchProgramInstance{
+class XPGrinder : public SingleSwitchProgramInstance, public ButtonListener{
 public:
     enum class TravelMethod{
         fly,
@@ -44,11 +46,16 @@ public:
     };
 
     XPGrinder();
+    ~XPGrinder();
     virtual void program(SingleSwitchProgramEnvironment& env, ProControllerContext& context) override;
     virtual void start_program_border_check(
         VideoStream& stream,
         FeedbackType feedback_type
     ) override{}
+
+    //  IMPORT_TEAM_BUTTON listener: loads IMPORT_TEAM_FILE into TEAM_TABLE so
+    //  the user can review the imported team in the UI before running.
+    virtual void on_press(ButtonCell& button) override;
 
 private:
     SimpleIntegerOption<uint64_t> MAX_BATTLES;
@@ -57,12 +64,16 @@ private:
     BooleanCheckBoxOption IGNORE_SHINIES;
 
     EnumDropdownOption<GrindLocationId> GRIND_LOCATION;
+    BooleanCheckBoxOption AUTO_HEAL_LOCATION;
     EnumDropdownOption<HealLocationId> HEAL_LOCATION;
 
     EnumDropdownOption<RotationMode> ROTATION_MODE;
     SimpleIntegerOption<uint64_t> PARTY_SIZE;
     OCR::LanguageOCROption LANGUAGE;
     BooleanCheckBoxOption AUTO_SCAN_ON_START;
+    StringOption IMPORT_TEAM_FILE;
+    ButtonOption IMPORT_TEAM_BUTTON;
+    BooleanCheckBoxOption AUTO_RANK_MOVES;
     XpGrinderTeamTable TEAM_TABLE;
 
     BooleanCheckBoxOption HEAL_ON_FAINT;
