@@ -1482,6 +1482,16 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonBDSP/Programs/Trading/PokemonBDSP_TradeRoutines.h
     Source/PokemonBDSP/Resources/PokemonBDSP_NameDatabase.cpp
     Source/PokemonBDSP/Resources/PokemonBDSP_NameDatabase.h
+    Source/PokemonChampions/Inference/PokemonChampions_BattleDetectors.cpp
+    Source/PokemonChampions/Inference/PokemonChampions_BattleDetectors.h
+    Source/PokemonChampions/Inference/PokemonChampions_MenuDetectors.cpp
+    Source/PokemonChampions/Inference/PokemonChampions_MenuDetectors.h
+    Source/PokemonChampions/PokemonChampions_Panels.cpp
+    Source/PokemonChampions/PokemonChampions_Panels.h
+    Source/PokemonChampions/PokemonChampions_Settings.cpp
+    Source/PokemonChampions/PokemonChampions_Settings.h
+    Source/PokemonChampions/Programs/PokemonChampions_Autobattle.cpp
+    Source/PokemonChampions/Programs/PokemonChampions_Autobattle.h
     Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_BattleDialogs.cpp
     Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_BattleDialogs.h
     Source/PokemonFRLG/Inference/Dialogs/PokemonFRLG_LearnMoveDialogReader.cpp

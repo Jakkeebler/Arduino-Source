@@ -18,6 +18,7 @@
 #include "PokemonSwSh/PokemonSwSh_Panels.h"
 #include "PokemonHome/PokemonHome_Panels.h"
 #include "PokemonBDSP/PokemonBDSP_Panels.h"
+#include "PokemonChampions/PokemonChampions_Panels.h"
 #include "PokemonFRLG/PokemonFRLG_Panels.h"
 #include "PokemonLA/PokemonLA_Panels.h"
 #include "PokemonLGPE/PokemonLGPE_Panels.h"
@@ -70,6 +71,7 @@ ProgramSelect::ProgramSelect(QWidget& parent, PanelHolder& holder)
     add(std::make_unique<NintendoSwitch::PokemonLZA::PanelListFactory>());
     add(std::make_unique<NintendoSwitch::PokemonFRLG::PanelListFactory>());
     add(std::make_unique<NintendoSwitch::PokemonPokopia::PanelListFactory>());
+    add(std::make_unique<NintendoSwitch::PokemonChampions::PanelListFactory>());
     if (PreloadSettings::instance().DEVELOPER_MODE){
         add(std::make_unique<NintendoSwitch::PokemonRSE::PanelListFactory>());
     }
