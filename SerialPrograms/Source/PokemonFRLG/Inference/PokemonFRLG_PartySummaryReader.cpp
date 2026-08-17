@@ -153,16 +153,20 @@ std::string PartySummaryReader::read_page3_single_move(
     ImageViewRGB32 region = extract_box_reference(game_screen, m_box_moves[move_index_0_to_3]);
 
     //  Try dark-text filters first (Summary page 3 is typically light-on-dark).
-    OCR::StringMatchResult result = MoveNameOCR::instance().read_substring(
+    //  read_move_slug returns "" on an ambiguous match rather than picking between
+    //  look-alike short move names, and retries through the GBA pixel-font
+    //  preprocessor before giving up -- so an empty result here really does mean
+    //  "unreadable", which is what the caller's move cache should record.
+    std::string slug = MoveNameOCR::instance().read_move_slug(
         logger, language, region, dark_text_filters()
     );
-    if (result.results.empty()){
+    if (slug.empty()){
         //  Fall back to white-text in case the screen variant differs.
-        result = MoveNameOCR::instance().read_substring(
+        slug = MoveNameOCR::instance().read_move_slug(
             logger, language, region, white_text_filters()
         );
     }
-    return best_token(result);
+    return slug;
 }
 
 void PartySummaryReader::read_page3_moves(

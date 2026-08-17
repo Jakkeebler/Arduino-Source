@@ -99,12 +99,12 @@ std::array<std::string, 4> ForgetMoveScreenReader::read_moves(
     ImageViewRGB32 game_screen = extract_box_reference(frame, GameSettings::instance().GAME_BOX);
     for (int i = 0; i < 4; i++){
         ImageViewRGB32 region = extract_box_reference(game_screen, m_box_moves[i]);
-        OCR::StringMatchResult ocr = MoveNameOCR::instance().read_substring(
+        //  Leaves result[i] empty on an unreadable or ambiguous slot.
+        //  pick_forget_slot() already treats an empty slug as "unknown, therefore
+        //  discardable", so an honest miss is far safer than a confident wrong one.
+        result[i] = MoveNameOCR::instance().read_move_slug(
             logger, language, region, dark_text_filters()
         );
-        if (!ocr.results.empty()){
-            result[i] = ocr.results.begin()->second.token;
-        }
     }
     return result;
 }

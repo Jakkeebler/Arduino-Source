@@ -51,13 +51,13 @@ std::string LearnMoveDialogReader::read_new_move(
     ImageViewRGB32 game_screen = extract_box_reference(frame, GameSettings::instance().GAME_BOX);
     ImageViewRGB32 region = extract_box_reference(game_screen, m_box_dialog_text);
 
-    OCR::StringMatchResult result = MoveNameOCR::instance().read_substring(
+    //  read_move_slug applies the confidence floor, returns "" rather than
+    //  guessing between look-alike short move names, and retries through the GBA
+    //  pixel-font preprocessor on a miss. A wrong slug here makes the decider
+    //  replace the wrong move, so an honest "" is much cheaper than a guess.
+    return MoveNameOCR::instance().read_move_slug(
         logger, language, region, dialog_text_filters()
     );
-    if (result.results.empty()){
-        return std::string();
-    }
-    return result.results.begin()->second.token;
 }
 
 

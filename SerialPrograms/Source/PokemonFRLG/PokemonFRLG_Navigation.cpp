@@ -663,14 +663,22 @@ WildBattleExit exit_wild_battle(
 
     uint16_t errors = 0;
     uint16_t loops = 0;
+    //  Dialog advances (case 1). Bounded separately from `loops`, which counts
+    //  move-learn prompt bounces: the post-battle EXP / level-up / "poof!" /
+    //  "learned Y!" chain legitimately walks case 1 many times per battle, so the
+    //  cap is generous -- it exists only so a dialog that keeps an advance arrow up
+    //  while B fails to clear it reports an error instead of spinning forever.
+    uint16_t advances = 0;
     bool first_attempt = true;
     bool rejected_first_box = false;
     bool move_learned = false;
     while (true){
-        if (errors > 5 || loops > 5){
+        if (errors > 5 || loops > 5 || advances > 40){
             OperationFailedException::fire(
                 ErrorReport::SEND_ERROR_REPORT,
-                "exit_wild_battle(): Failed to exit battle.",
+                "exit_wild_battle(): Failed to exit battle. (errors=" +
+                    std::to_string(errors) + ", loops=" + std::to_string(loops) +
+                    ", advances=" + std::to_string(advances) + ")",
                 console
             );
         }
@@ -683,13 +691,28 @@ WildBattleExit exit_wild_battle(
         WallClock deadline = current_time() + 30s;
         int ret;
         if (first_attempt){
-            ret = run_until<ProControllerContext>(
+            //  The long B-mash is how we blow through the post-battle EXP /
+            //  level-up dialog chain in ~2 s, so keep it -- and deliberately do
+            //  NOT watch advance_dialog here. That watcher fires on the "wild X
+            //  fainted!" arrow which is already on screen when we arrive, so
+            //  watching it would abandon the mash immediately and walk the whole
+            //  chain one ~3 s press at a time.
+            //
+            //  DO watch move_learn_select. Previously this branch watched only
+            //  battle_exited, so a move-learn prompt got answered "No" by the mash
+            //  and then "No" again to "Give up on learning X?", which bounces back
+            //  to the first prompt -- burning the full 20 s before the decider ever
+            //  got a look at the move.
+            int raw = run_until<ProControllerContext>(
                 console, context,
                 [](ProControllerContext& context) {
                     pbf_mash_button(context, BUTTON_B, 20000ms);
                 },
-                { battle_exited }
+                { battle_exited, move_learn_select }
             );
+            //  Remap onto the shared switch's indices below, which are ordered
+            //  { battle_exited, advance_dialog, move_learn_select }.
+            ret = (raw == 1) ? 2 : raw;
         }else{
             ret = run_until<ProControllerContext>(
                 console, context,
@@ -737,11 +760,15 @@ WildBattleExit exit_wild_battle(
             console.log("Battle exited.");
             return exit_normally(move_learned);
         case 1:
+            //  Only reachable from the !first_attempt branch, which is the only one
+            //  that watches advance_dialog.
             console.log("Battle Advance arrow detected.");
+            advances++;
             pbf_press_button(context, BUTTON_B, 200ms, 800ms);
             rejected_first_box = false;
             continue;
         case 2:
+            first_attempt = false;
             if (stop_on_move_learn){
                 console.log("Move learn detected. Stopping per stop_on_move_learn (battle dialog still active).");
                 return WildBattleExit::StopBattleStuck;
@@ -815,9 +842,12 @@ WildBattleExit exit_wild_battle(
                     continue;
                 }
                 //  Decline path: press B on the first prompt.
+                //  Do NOT set move_learned here. Declining changes nothing about
+                //  the moveset, but reporting LearnHandled made the caller run a
+                //  full party-menu rescan after every declined level-up move --
+                //  slow, and pointless.
                 pbf_press_button(context, BUTTON_B, 200ms, 0ms);
                 rejected_first_box = true;
-                move_learned = true;
             }
             continue;
         default:
