@@ -658,6 +658,26 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
             if (rot >= 0 && rot < 6){
                 party.current_moves[rot] = r.read.move_slugs;
                 party.level[rot] = r.read.level;
+
+                //  A conflicted or unidentified read leaves species_slug empty on
+                //  purpose, so the block below won't touch the table row. Say so
+                //  out loud: the row keeps whatever species it already had, and
+                //  everything downstream -- the chain learnset, the auto-filled
+                //  moves, the evolution hold -- is only as right as that value.
+                if (r.species_confidence == SpeciesConfidence::Conflicted ||
+                    r.species_confidence == SpeciesConfidence::None
+                ){
+                    const std::string current_row = TEAM_TABLE.species_for((size_t)rot);
+                    env.log(
+                        "Slot " + std::to_string(r.slot_1indexed) + ": species " +
+                        std::string(species_confidence_name(r.species_confidence)) +
+                        ". Team table row keeps '" +
+                        (current_row.empty() ? std::string("(unset)") : current_row) +
+                        "'. Set it by hand if that is wrong -- move planning depends on it.",
+                        COLOR_RED
+                    );
+                    stats.errors++;
+                }
                 //  Auto-update the team-table species cell when the scan
                 //  identifies a species that's different from (or absent
                 //  in) the row.

@@ -30,10 +30,33 @@ namespace NintendoSwitch{
 namespace PokemonFRLG{
 
 
+//  How much to trust PartyScanResult::species_slug.
+//
+//  Species is read two independent ways -- a sprite match and the page-1
+//  Pokedex-number OCR -- and neither is reliable on its own. The sprite matcher
+//  picks from 151 candidates, several of which look alike (the Nidoran lines,
+//  the legendary birds, Gastly/Haunter); the digit OCR works on a small GBA
+//  font. So the two are cross-checked against each other rather than ranked.
+enum class SpeciesConfidence{
+    None,           //  Neither reader produced an answer. species_slug is empty.
+    Corroborated,   //  Sprite and dex# agree. Trustworthy.
+    SingleSource,   //  Only one reader answered. Probably right, but unconfirmed.
+    Conflicted,     //  They disagree. species_slug is deliberately left EMPTY:
+                    //  guessing here silently selects the wrong evolution chain,
+                    //  the wrong auto-filled moves and the wrong evolution hold.
+};
+
+const char* species_confidence_name(SpeciesConfidence confidence);
+
+
 struct PartyScanResult{
     int slot_1indexed = 0;       //  1..6
     PartySummaryRead read;       //  dex#, nickname, 4 move slugs
-    std::string species_slug;    //  resolved from dex_no via FRLG species table; empty if not in table
+    //  Empty when the species could not be established, INCLUDING when the two
+    //  readers disagreed. Callers must not read empty as "unchanged" -- check
+    //  species_confidence to tell "could not read it" from "did not look".
+    std::string species_slug;
+    SpeciesConfidence species_confidence = SpeciesConfidence::None;
 };
 
 

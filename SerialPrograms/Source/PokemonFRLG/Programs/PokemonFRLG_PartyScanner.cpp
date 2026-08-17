@@ -32,6 +32,17 @@ namespace PokemonFRLG{
 using namespace std::chrono_literals;
 
 
+const char* species_confidence_name(SpeciesConfidence confidence){
+    switch (confidence){
+    case SpeciesConfidence::None:         return "unidentified";
+    case SpeciesConfidence::Corroborated: return "confirmed";
+    case SpeciesConfidence::SingleSource: return "uncorroborated";
+    case SpeciesConfidence::Conflicted:   return "conflicted";
+    }
+    return "?";
+}
+
+
 namespace{
 
 //  The full set of FRLG species slugs, used as the sprite-matcher subset.
@@ -227,16 +238,64 @@ PartyScanResult read_current_slot(
             }
         }
 
-        if (!sprite_slug.empty() && !dex_slug.empty() && sprite_slug != dex_slug){
+        //  Cross-check the two readers rather than ranking them.
+        //
+        //  This used to prefer the sprite unconditionally and merely log an
+        //  orange note on disagreement. Neither reader is good enough for that:
+        //  the sprite matcher chooses among 151 look-alike-prone candidates, and
+        //  the digit OCR reads a small GBA font. Silently picking one on a
+        //  conflict writes a wrong species into the team table, which then
+        //  selects the wrong evolution chain, the wrong auto-filled moves and the
+        //  wrong evolution hold -- none of it visible to the user.
+        const std::string slot_label = "Slot " + std::to_string(slot_1indexed) + ": ";
+        if (!sprite_slug.empty() && !dex_slug.empty()){
+            if (sprite_slug == dex_slug){
+                result.species_slug = sprite_slug;
+                result.species_confidence = SpeciesConfidence::Corroborated;
+                env.log(
+                    slot_label + "species '" + sprite_slug +
+                    "' confirmed by both sprite and dex#" +
+                    std::to_string(result.read.dex_no) + "."
+                );
+            }else{
+                //  Refuse to choose. An empty slug leaves whatever the user
+                //  configured in place, which beats overwriting it on a coin flip.
+                result.species_slug.clear();
+                result.species_confidence = SpeciesConfidence::Conflicted;
+                env.log(
+                    slot_label + "SPECIES CONFLICT - sprite says '" + sprite_slug +
+                    "' (dist=" + std::to_string(sprite_distance) + ") but dex#" +
+                    std::to_string(result.read.dex_no) + " says '" + dex_slug +
+                    "'. Refusing to guess; leaving this row's species unchanged. "
+                    "Set it by hand in the Team Table if it is wrong.",
+                    COLOR_RED
+                );
+            }
+        }else if (!sprite_slug.empty()){
+            result.species_slug = sprite_slug;
+            result.species_confidence = SpeciesConfidence::SingleSource;
             env.log(
-                "Slot " + std::to_string(slot_1indexed) + ": species mismatch - sprite='" +
-                sprite_slug + "' (dist=" + std::to_string(sprite_distance) + ") vs dex#" +
-                std::to_string(result.read.dex_no) + "->'" + dex_slug + "'. Using sprite.",
+                slot_label + "species '" + sprite_slug + "' from sprite only (dist=" +
+                std::to_string(sprite_distance) + "); dex# unreadable, so uncorroborated.",
                 COLOR_ORANGE
             );
+        }else if (!dex_slug.empty()){
+            result.species_slug = dex_slug;
+            result.species_confidence = SpeciesConfidence::SingleSource;
+            env.log(
+                slot_label + "species '" + dex_slug + "' from dex#" +
+                std::to_string(result.read.dex_no) +
+                " only; sprite match was rejected, so uncorroborated.",
+                COLOR_ORANGE
+            );
+        }else{
+            result.species_confidence = SpeciesConfidence::None;
+            env.log(
+                slot_label + "species could not be identified - the sprite match was "
+                "rejected and the dex number was unreadable.",
+                COLOR_RED
+            );
         }
-        //  Prefer the sprite match; fall back to the dex-number lookup.
-        result.species_slug = !sprite_slug.empty() ? sprite_slug : dex_slug;
     }
 
     env.log("Slot " + std::to_string(slot_1indexed) + ": navigating to page 3.");

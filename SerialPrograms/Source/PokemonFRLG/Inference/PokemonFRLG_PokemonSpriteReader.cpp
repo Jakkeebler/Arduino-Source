@@ -75,6 +75,13 @@ ImageMatch::ImageMatchResult SummarySpriteReader::read(const ImageViewRGB32& fra
 
     static const double RETRY_ALPHA = 0.25;
 
+    //  Ceiling for accepting the final match. Deliberately looser than
+    //  RETRY_ALPHA: RETRY_ALPHA decides "is the cropped match good enough to skip
+    //  the exact matcher", while this decides "is the answer trustworthy at all".
+    //  If real sprites are being rejected, raise this; if wrong species are
+    //  slipping through, lower it toward RETRY_ALPHA.
+    static const double MAX_ACCEPT_ALPHA = 0.50;
+
     ImageViewRGB32 game_screen =
         extract_box_reference(frame, GameSettings::instance().GAME_BOX);
 
@@ -86,6 +93,24 @@ ImageMatch::ImageMatchResult SummarySpriteReader::read(const ImageViewRGB32& fra
             sprite_image, m_box_sprite,
             5, EXACT_ALPHA_SPREAD
         );
+    }
+
+    //  Rejection floor on the FINAL result.
+    //
+    //  The retry above used to return whatever it found with no quality check at
+    //  all, and the caller then took results.begin() unconditionally -- so an
+    //  unrecognisable sprite still produced a confident species. Several Kanto
+    //  sprites are close enough to one another (the Nidoran lines, the legendary
+    //  birds, Gastly/Haunter) that a bad crop lands on a plausible neighbour
+    //  rather than on obvious nonsense, which is exactly the failure that is hard
+    //  to notice.
+    //
+    //  Two conditions to accept: exactly one surviving candidate (more than one
+    //  means the alpha spread could not separate them) and a distance at or below
+    //  the ceiling. Otherwise return empty, which callers must treat as "could
+    //  not identify" rather than as a licence to guess.
+    if (result.results.size() != 1 || result.results.begin()->first > MAX_ACCEPT_ALPHA){
+        result.results.clear();
     }
 
     return result;
