@@ -32,8 +32,10 @@ const char* kanto_region_name(KantoRegion r);
 KantoRegion kanto_region_at(int tile_x, int tile_y);
 
 struct KantoPosition{
-    int tile_x;          //  Combined-map column. 0..47
-    int tile_y;          //  Combined-map row.    0..99
+    //  Tile the PLAYER is standing on, in combined-map coordinates. The map is
+    //  408x400 tiles (6528x6400 px at 16 px/tile), so 0..407 and 0..399.
+    int tile_x;          //  Combined-map column.
+    int tile_y;          //  Combined-map row.
     double confidence;   //  TM_CCOEFF_NORMED score in [-1, 1].
 };
 

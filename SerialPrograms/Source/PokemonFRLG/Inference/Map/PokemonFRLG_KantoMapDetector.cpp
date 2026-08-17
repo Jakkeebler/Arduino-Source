@@ -55,6 +55,38 @@ constexpr int VIEWPORT_W_TILES = 15;
 constexpr int VIEWPORT_H_TILES = 10;
 constexpr const char* MAP_RELATIVE_PATH = "PokemonFRLG/Maps/Kanto-Combined.png";
 
+//  Where the player sprite sits inside the 15x10-tile viewport. Gen 3 pins the
+//  player to one screen cell and scrolls the map underneath, so these are fixed.
+//
+//  Do NOT use the geometric center of the viewport as the player anchor.
+//  templ.rows / 2 == 80 px lands exactly on the boundary between tile rows 4
+//  and 5 (the viewport is an even 10 rows tall), so the sub-pixel refinement
+//  further down pushes the *truncated* row back and forth between 4 and 5 on
+//  every single poll. That jitter:
+//    - made every tolerance-0 goal (all the Pokemon Center entrances)
+//      permanently unreachable,
+//    - made A* alternate north/south forever, and
+//    - defeated the navigator's no-progress detector, because the reported
+//      tile changed every poll even while the player stood still.
+//  Anchoring on the *center* of the player's tile instead (row 4 -> 72 px)
+//  leaves +-8 px of slack before the quantized row can change.
+//  NEEDS ONE EMPIRICAL CHECK: PLAYER_TILE_ROW is 4 or 5 depending on where FRLG
+//  actually draws the player in the 10-row viewport, and this file cannot tell you
+//  which. Run the "Kanto Map Position Test" program while standing on a tile you
+//  can identify on Kanto-Combined.png. If the logged row is consistently one
+//  MORE than the truth, set this to 5; consistently one less, set it to 3.
+//  Everything else here is correct either way -- this is a single-line
+//  calibration, and it is the only value in this change that was not derivable
+//  from the code.
+//
+//  (Column 7 is certain: 15 columns, player centred, 0-indexed centre = 7.)
+constexpr int PLAYER_TILE_COL = 7;
+constexpr int PLAYER_TILE_ROW = 4;
+static_assert(PLAYER_TILE_COL < VIEWPORT_W_TILES, "player anchor outside viewport");
+static_assert(PLAYER_TILE_ROW < VIEWPORT_H_TILES, "player anchor outside viewport");
+constexpr double PLAYER_ANCHOR_PX_X = PLAYER_TILE_COL * TILE_PX + TILE_PX / 2.0;  //  120.0
+constexpr double PLAYER_ANCHOR_PX_Y = PLAYER_TILE_ROW * TILE_PX + TILE_PX / 2.0;  //   72.0
+
 //  Ambiguity rejection: when measuring the second-best correlation peak, ignore
 //  everything within this radius of the best peak (that area is the same peak's
 //  shoulder, not a distinct location).
@@ -145,18 +177,36 @@ std::optional<KantoPosition> KantoMapDetector::locate(
         return std::nullopt;
     }
 
-    //  Constrain the search to a window around the hint, if given. Window is
-    //  expressed in tile units; convert to a pixel ROI, clamped to the map
-    //  bounds and large enough to fit the template.
+    //  Constrain the search to a window around the hint, if given.
+    //
+    //  Two things this has to get right, both of which the previous version got
+    //  wrong and which together silently disabled hinting for small radii:
+    //
+    //  1. The window must hold the VIEWPORT, not just the player. `hint_x/hint_y`
+    //     name the player's tile, but matchTemplate searches for the viewport's
+    //     top-left corner, which sits PLAYER_TILE_COL tiles west and
+    //     PLAYER_TILE_ROW tiles north of the player. Centring the window on the
+    //     player tile therefore biased it south-east by (7, 4) tiles.
+    //  2. The window must be at least template-sized (240x160 px) PLUS the search
+    //     radius. The old code made it 2*radius square, so any radius below 8
+    //     tiles produced a window smaller than the template, failed the
+    //     `sw >= templ.cols` test below, and fell through to a full-map match --
+    //     turning every single poll into a ~1-2 s, ~300 MB search while looking
+    //     like it was using the fast path.
     cv::Mat search_image;
     int search_offset_x = 0, search_offset_y = 0;
     bool used_hint = false;
     if (hint_radius_tiles > 0 && hint_x >= 0 && hint_y >= 0){
         int radius_px = hint_radius_tiles * TILE_PX;
-        int sx = hint_x * TILE_PX - radius_px;
-        int sy = hint_y * TILE_PX - radius_px;
-        int sw = 2 * radius_px;
-        int sh = 2 * radius_px;
+        //  Expected top-left of the viewport if the player really is on the hinted
+        //  tile. The +TILE_PX/2 (player pixel is the tile centre) and the
+        //  -TILE_PX/2 inside PLAYER_ANCHOR cancel, leaving whole tiles.
+        int expect_x = (hint_x - PLAYER_TILE_COL) * TILE_PX;
+        int expect_y = (hint_y - PLAYER_TILE_ROW) * TILE_PX;
+        int sx = expect_x - radius_px;
+        int sy = expect_y - radius_px;
+        int sw = templ.cols + 2 * radius_px;
+        int sh = templ.rows + 2 * radius_px;
         //  Clamp to map bounds.
         if (sx < 0){ sw += sx; sx = 0; }
         if (sy < 0){ sh += sy; sy = 0; }
@@ -230,8 +280,11 @@ std::optional<KantoPosition> KantoMapDetector::locate(
         MatchResult m;
         m.best = max_val;
         m.second = second_val;
-        m.center_px_x = (max_loc.x + dx) + off_x + templ.cols / 2.0;
-        m.center_px_y = (max_loc.y + dy) + off_y + templ.rows / 2.0;
+        //  (max_loc + off) is the global pixel position of the viewport's
+        //  top-left corner; add the player's fixed offset within the viewport
+        //  to get the player's own pixel position on the combined map.
+        m.center_px_x = (max_loc.x + dx) + off_x + PLAYER_ANCHOR_PX_X;
+        m.center_px_y = (max_loc.y + dy) + off_y + PLAYER_ANCHOR_PX_Y;
         return m;
     };
 
@@ -260,9 +313,19 @@ std::optional<KantoPosition> KantoMapDetector::locate(
         return std::nullopt;
     }
 
+    //  Round to the nearest tile center rather than truncating. The anchor above
+    //  sits at a tile center, so rounding tolerates +-(TILE_PX / 2) of match
+    //  error before the reported tile changes; truncation tolerated zero on the
+    //  vertical axis.
     KantoPosition pos;
-    pos.tile_x = int(m.center_px_x / TILE_PX);
-    pos.tile_y = int(m.center_px_y / TILE_PX);
+    pos.tile_x = (int)std::lround((m.center_px_x - TILE_PX / 2.0) / TILE_PX);
+    pos.tile_y = (int)std::lround((m.center_px_y - TILE_PX / 2.0) / TILE_PX);
+    if (m_width_tiles > 0){
+        pos.tile_x = std::clamp(pos.tile_x, 0, m_width_tiles - 1);
+    }
+    if (m_height_tiles > 0){
+        pos.tile_y = std::clamp(pos.tile_y, 0, m_height_tiles - 1);
+    }
     pos.confidence = m.best;
     return pos;
 }
