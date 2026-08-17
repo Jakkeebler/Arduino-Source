@@ -24,6 +24,7 @@
 #include "Common/Cpp/Options/EnumDropdownOption.h"
 #include "CommonTools/Options/StringSelectOption.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h"
+#include "PokemonFRLG/Programs/Farming/PokemonFRLG_MovePlan.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -89,6 +90,32 @@ public:
     //  (or empty) collapses to "(none)". Returns false if pokemon is out of
     //  range.
     bool set_desired_moves(size_t pokemon, const std::array<std::string, 4>& move_slugs);
+
+    //  Populate desired-move cells from MovePlan's suggestion: the strongest
+    //  reachable level-up moves in the species' chain, coverage-biased, ordered
+    //  strongest-first (slot 0 is the grinder's highest battle priority).
+    //
+    //  Rows the user has already filled are skipped unless `overwrite` is set,
+    //  so this is safe to run right after a party scan without destroying manual
+    //  picks. Rows with no species are skipped entirely.
+    //
+    //  `levels` and `current` are per-row party-scan data, used so the
+    //  suggestion doesn't include moves whose level has already gone by. Pass
+    //  empty vectors when unknown. Returns the number of rows changed.
+    size_t autofill_desired_moves(
+        bool overwrite,
+        const std::vector<int>& levels = {},
+        const std::vector<std::array<std::string, 4>>& current = {}
+    );
+
+    //  Plan a row against live party state: what is already known, what is
+    //  coming and at what level, what has been missed for good, and whether
+    //  evolving right now would forfeit something still wanted.
+    MovePlan build_plan(
+        size_t pokemon,
+        int current_level,
+        const std::array<std::string, 4>& current_moves
+    ) const;
 
     //  Build a MoveLearnDecider from a row's snapshot. Caller owns the result.
     MoveLearnDecider make_decider(size_t pokemon) const;

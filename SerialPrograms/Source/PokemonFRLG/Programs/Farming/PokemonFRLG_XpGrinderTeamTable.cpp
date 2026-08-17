@@ -10,6 +10,7 @@
 #include "PokemonFRLG/Resources/PokemonFRLG_SpeciesData.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_Learnsets.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_Evolutions.h"
+#include "PokemonFRLG_MovePlan.h"
 #include "PokemonFRLG_XpGrinderTeamTable.h"
 
 namespace PokemonAutomation{
@@ -184,9 +185,85 @@ std::unique_ptr<EditableTableRow> XpGrinderTeamRow::clone() const{
 
 
 std::vector<std::unique_ptr<EditableTableRow>> XpGrinderTeamTable::make_defaults(){
+    //  One row per party slot. This used to ship a SINGLE row, which meant that
+    //  for any party larger than one, species_for()/desired_for() silently
+    //  returned empty for slots 2-6 and set_species() silently returned false --
+    //  while the grinder logged "Updating team table" as though it had worked.
+    //  Those Pokemon got no pinned moves, no STAB, and no auto-species.
+    //
+    //  Spare rows are harmless: a row with no species contributes nothing, and
+    //  the party scan only fills as many as the party actually has.
     std::vector<std::unique_ptr<EditableTableRow>> ret;
-    ret.emplace_back(std::make_unique<XpGrinderTeamRow>(*this));
+    for (int i = 0; i < 6; i++){
+        ret.emplace_back(std::make_unique<XpGrinderTeamRow>(*this));
+    }
     return ret;
+}
+
+size_t XpGrinderTeamTable::autofill_desired_moves(
+    bool overwrite,
+    const std::vector<int>& levels,
+    const std::vector<std::array<std::string, 4>>& current
+){
+    size_t changed = 0;
+    size_t index = 0;
+    run_on_all_rows([&](XpGrinderTeamRow& row){
+        const std::string species_slug = row.species.slug();
+        if (species_slug.empty()){
+            index++;
+            return false;   //  Nothing to suggest for an unidentified row.
+        }
+
+        bool already_set = false;
+        for (int m = 0; m < 4; m++){
+            if (!row.desired_move[m].slug().empty()){
+                already_set = true;
+                break;
+            }
+        }
+        if (already_set && !overwrite){
+            index++;
+            return false;   //  Never clobber the user's own picks unless asked.
+        }
+
+        const int level = index < levels.size() ? levels[index] : -1;
+        const std::array<std::string, 4> known =
+            index < current.size() ? current[index] : std::array<std::string, 4>{};
+
+        const std::array<std::string, 4> suggestion =
+            suggest_desired_moves(species_slug, level, known);
+
+        bool set_any = false;
+        for (int m = 0; m < 4; m++){
+            if (suggestion[m].empty()){
+                row.desired_move[m].set_by_index(0);   //  "(none)"
+            }else{
+                //  Falls back to "(none)" internally if the slug somehow isn't
+                //  in this row's chain database.
+                row.desired_move[m].set_by_slug(suggestion[m]);
+                set_any = true;
+            }
+        }
+        //  Only count a row we actually populated. A species with no rankable
+        //  level-up moves left yields four empty slots, and reporting that as
+        //  "populated" would be a lie in the log.
+        if (set_any){
+            changed++;
+        }
+        index++;
+        return false;   //  Visit every row.
+    });
+    return changed;
+}
+
+MovePlan XpGrinderTeamTable::build_plan(
+    size_t pokemon,
+    int current_level,
+    const std::array<std::string, 4>& current_moves
+) const{
+    return build_move_plan(
+        species_for(pokemon), current_level, current_moves, desired_for(pokemon)
+    );
 }
 XpGrinderTeamTable::XpGrinderTeamTable()
     : EditableTableOption_t<XpGrinderTeamRow>(

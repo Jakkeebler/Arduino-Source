@@ -74,6 +74,9 @@ private:
     StringOption IMPORT_TEAM_FILE;
     ButtonOption IMPORT_TEAM_BUTTON;
     BooleanCheckBoxOption AUTO_RANK_MOVES;
+    BooleanCheckBoxOption AUTOFILL_DESIRED_MOVES;
+    BooleanCheckBoxOption HOLD_EVOLUTION_FOR_MOVES;
+    BooleanCheckBoxOption STOP_WHEN_TEAM_COMPLETE;
     XpGrinderTeamTable TEAM_TABLE;
 
     BooleanCheckBoxOption HEAL_ON_FAINT;

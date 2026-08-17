@@ -4,6 +4,10 @@
  *
  */
 
+#include <algorithm>
+#include <array>
+#include <functional>
+#include <vector>
 #include "Common/Cpp/Color.h"
 #include "Common/Cpp/Exceptions.h"
 #include "Common/Cpp/Json/JsonValue.h"
@@ -24,6 +28,7 @@
 #include "PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.h"
 #include "PokemonFRLG/PokemonFRLG_Navigation.h"
 #include "PokemonFRLG_MoveLearnDecider.h"
+#include "PokemonFRLG_MovePlan.h"
 #include "PokemonFRLG_XPGrinder.h"
 
 namespace PokemonAutomation{
@@ -161,6 +166,35 @@ XPGrinder::XPGrinder()
         LockMode::LOCK_WHILE_RUNNING,
         true
     )
+    , AUTOFILL_DESIRED_MOVES(
+        "<b>Auto-fill empty move rows from the party scan:</b><br>"
+        "For any team row that has no moves chosen, pick the four strongest level-up moves "
+        "that " + Pokemon::STRING_POKEMON + " can still reach in its evolution line, biased "
+        "toward type coverage and ordered strongest-first. Rows you have filled in yourself "
+        "are never touched. Moves that KO the user (Explosion, Self-Destruct) are excluded, "
+        "and two-turn moves are de-prioritised as poor grinding defaults — pin those by "
+        "hand if you want them.",
+        LockMode::LOCK_WHILE_RUNNING,
+        true
+    )
+    , HOLD_EVOLUTION_FOR_MOVES(
+        "<b>Hold evolution until stage-locked moves are learned:</b><br>"
+        "In Gen 3 the evolved form has its own level-up learnset, and for stone evolutions it "
+        "is far smaller — Growlithe loses Flamethrower, Flame Wheel, Agility and Take Down "
+        "the instant it becomes Arcanine; Pikachu loses Thunder, Agility and Slam on becoming "
+        "Raichu. When a desired move is only learnable at the current stage, this cancels "
+        "evolution for that " + Pokemon::STRING_POKEMON + " until it has the move, then lets it "
+        "evolve normally. Applies per party member.",
+        LockMode::LOCK_WHILE_RUNNING,
+        true
+    )
+    , STOP_WHEN_TEAM_COMPLETE(
+        "<b>Stop when every party member has its desired moveset:</b><br>"
+        "Moves that are already missed or not learnable by level-up are excluded from the "
+        "check, so an impossible pick can never make this run forever.",
+        LockMode::LOCK_WHILE_RUNNING,
+        false
+    )
     , TEAM_TABLE()
     , HEAL_ON_FAINT(
         "<b>Heal on faint:</b><br>When the lead party faints, accept the whiteout and resume grinding instead of stopping. The game will warp you to the last visited Pokemon Center and fully heal the party automatically.",
@@ -219,6 +253,9 @@ XPGrinder::XPGrinder()
     PA_ADD_OPTION(IMPORT_TEAM_FILE);
     PA_ADD_OPTION(IMPORT_TEAM_BUTTON);
     PA_ADD_OPTION(AUTO_RANK_MOVES);
+    PA_ADD_OPTION(AUTOFILL_DESIRED_MOVES);
+    PA_ADD_OPTION(HOLD_EVOLUTION_FOR_MOVES);
+    PA_ADD_OPTION(STOP_WHEN_TEAM_COMPLETE);
     PA_ADD_OPTION(TEAM_TABLE);
     PA_ADD_OPTION(HEAL_ON_FAINT);
     PA_ADD_OPTION(HEAL_ON_OUT_OF_PP);
@@ -267,9 +304,12 @@ const char* travel_method_string(XPGrinder::TravelMethod travel){
     return "?";
 }
 
-void whiteout_resume(
-    SingleSwitchProgramEnvironment& env, ProControllerContext& context,
-    GrindLocationId grind_location
+//  Phases 1 and 2 of whiteout handling: clear the faint dialogs, ride out the
+//  warp, and clear the "scurried back to a Pokemon Center" prompt. Split out so
+//  the "stop the program on a wipe" path can also leave the game on a clean
+//  overworld screen instead of abandoning it mid-dialog.
+void whiteout_settle(
+    SingleSwitchProgramEnvironment& env, ProControllerContext& context
 ){
     env.log("Whiteout phase 1: mashing through faint dialogs, watching for screen transition into PC.", COLOR_BLUE);
 
@@ -291,8 +331,26 @@ void whiteout_resume(
     }
 
     env.log("Whiteout phase 2: clearing 'scurried back to a Pokemon Center' dialog.", COLOR_BLUE);
-    pbf_mash_button(context, BUTTON_B, 5000ms);
+    pbf_mash_button(context, BUTTON_B, 8000ms);
     context.wait_for_all_requests();
+}
+
+//  `on_healed` fires the moment the party is actually restored -- i.e. after the
+//  whiteout warp, BEFORE the walk back to the grind spot. If the walk throws, the
+//  caller's health bookkeeping has still been updated to match reality; the old
+//  code only updated it after the whole trip succeeded, so a failed walk-back left
+//  the program believing Pokemon were still fainted.
+void whiteout_resume(
+    SingleSwitchProgramEnvironment& env, ProControllerContext& context,
+    GrindLocationId grind_location,
+    const std::function<void()>& on_healed
+){
+    whiteout_settle(env, context);
+
+    //  The warp itself fully restores HP and PP.
+    if (on_healed){
+        on_healed();
+    }
 
     env.log("Whiteout phase 3: leaving PC and walking back to grind location via map navigation.", COLOR_BLUE);
     leave_pokecenter(env.console, context);
@@ -300,11 +358,14 @@ void whiteout_resume(
     env.log("Heal trip complete (whiteout). Resuming grinding.", COLOR_BLUE);
 }
 
+//  See whiteout_resume: `on_healed` fires right after heal_at_pokecenter, not at
+//  the end of the trip.
 void routine_heal_trip(
     SingleSwitchProgramEnvironment& env, ProControllerContext& context,
     XPGrinder::TravelMethod travel,
     GrindLocationId grind_location,
-    HealLocationId heal_location
+    HealLocationId heal_location,
+    const std::function<void()>& on_healed
 ){
     env.log(std::string("Heal trip phase 1: traveling to the Pokemon Center via ") + travel_method_string(travel) + ".", COLOR_BLUE);
     switch (travel){
@@ -322,6 +383,9 @@ void routine_heal_trip(
     env.log("Heal trip phase 2: entering PC, healing party, leaving PC.", COLOR_BLUE);
     enter_pokecenter(env.console, context);
     heal_at_pokecenter(env.console, context);
+    if (on_healed){
+        on_healed();
+    }
     leave_pokecenter(env.console, context);
     env.log("Heal trip phase 3: walking back to grind location via map navigation.", COLOR_BLUE);
     kanto_navigate_to(env, context, goal_for_grind_location(grind_location));
@@ -338,6 +402,12 @@ struct PartyState{
     //  Cached current move slugs per rotation index, refreshed by scan_party()
     //  at start and scan_party_slot() after each move-learn.
     std::array<std::string, 4> current_moves[6];
+    //  Last read level per rotation index; -1 when unknown.
+    int level[6];
+    //  Desired-moveset plan per rotation index. Rebuilt from the team table
+    //  whenever a slot is (re)scanned, which is exactly when its species, level
+    //  or moves can have changed.
+    MovePlan plan[6];
 
     explicit PartyState(int size)
         : party_size(size)
@@ -346,6 +416,7 @@ struct PartyState{
             game_slot[i] = i + 1;  // game slots are 1-indexed
             fainted[i] = false;
             out_of_pp[i] = false;
+            level[i] = -1;
             for (int m = 0; m < 4; m++){
                 current_moves[i][m].clear();
             }
@@ -365,6 +436,41 @@ struct PartyState{
         return -1;
     }
 
+    //  As next_alive(), but prefers a member whose desired moveset is still
+    //  unfinished, so a party where one Pokemon is done doesn't keep feeding it
+    //  experience while another still needs levels. Falls back to plain
+    //  next_alive() when everyone eligible is already finished.
+    int next_alive_preferring_unfinished(bool skip_pp_exhausted = false) const{
+        for (int offset = 1; offset < party_size; offset++){
+            int idx = (current_rotation + offset) % party_size;
+            if (fainted[idx]) continue;
+            if (skip_pp_exhausted && out_of_pp[idx]) continue;
+            if (plan[idx].complete()) continue;
+            return idx;
+        }
+        return next_alive(skip_pp_exhausted);
+    }
+
+    //  True when every party member's desired moveset is satisfied. Members with
+    //  no desired moves configured count as complete (nothing was asked of them).
+    bool all_plans_complete() const{
+        for (int i = 0; i < party_size; i++){
+            if (!plan[i].complete()) return false;
+        }
+        return true;
+    }
+
+    //  True if ANY party member has desired moves configured. Without this,
+    //  a party where nothing was asked for (scan failed, or the user left the
+    //  table empty) reads as "everyone is complete" and the completion check
+    //  would stop the program immediately, claiming success it never earned.
+    bool any_plan_has_goals() const{
+        for (int i = 0; i < party_size; i++){
+            if (plan[i].has_goals()) return true;
+        }
+        return false;
+    }
+
     bool all_fainted() const{
         for (int i = 0; i < party_size; i++){
             if (!fainted[i]) return false;
@@ -382,11 +488,6 @@ struct PartyState{
         return true;
     }
 
-    //  Call after swapping rotation_from's physical slot with rotation_to's physical slot.
-    void on_swap(int rotation_from, int rotation_to){
-        std::swap(game_slot[rotation_from], game_slot[rotation_to]);
-    }
-
     //  Returns the rotation index whose current game slot equals the given 1-indexed slot.
     //  Returns -1 if not found.
     int find_rotation_with_game_slot(int slot) const{
@@ -394,6 +495,63 @@ struct PartyState{
             if (game_slot[i] == slot) return i;
         }
         return -1;
+    }
+
+    //  Bookkeeping for switch_party_lead_overworld(N), which SWAPS slot 1 with
+    //  slot N -- it does not rotate. Call this AFTER the physical switch, with
+    //  the rotation index that was promoted.
+    //
+    //  This replaces the old on_swap(from, to), which assumed the outgoing
+    //  Pokemon was already in slot 1. That held in the per-battle path (which
+    //  normalizes the winner into slot 1 first) but not in the PP-exhaustion
+    //  path: after a mid-battle forced switch the active Pokemon sits in its
+    //  own slot, so on_swap recorded a swap the game never performed and the
+    //  rotation->slot table stayed wrong for the rest of the run.
+    void on_promote_to_lead(int rotation_promoted){
+        if (rotation_promoted < 0 || rotation_promoted >= party_size) return;
+        int target = game_slot[rotation_promoted];
+        if (target == 1) return;
+        int rotation_in_slot1 = find_rotation_with_game_slot(1);
+        game_slot[rotation_promoted] = 1;
+        if (rotation_in_slot1 >= 0){
+            game_slot[rotation_in_slot1] = target;
+        }
+    }
+
+    //  Which Pokemon the game will send out for the next encounter: the
+    //  lowest-numbered game slot that has not fainted. Gen 3 always leads with
+    //  the first healthy party member, regardless of who was last on the field.
+    int rotation_game_will_lead() const{
+        for (int slot = 1; slot <= party_size; slot++){
+            int rot = find_rotation_with_game_slot(slot);
+            if (rot >= 0 && !fainted[rot]) return rot;
+        }
+        return -1;
+    }
+
+    //  Called after a heal trip or whiteout. Clears only the per-trip health
+    //  flags.
+    //
+    //  Deliberately PRESERVES game_slot[] and current_moves[]:
+    //    - Healing does not reorder the party, so the permutation built up by
+    //      earlier switch_party_lead_overworld calls is still accurate. The old
+    //      `party = PartyState(party_size)` reset it to the identity, which
+    //      silently re-pointed every rotation index at the wrong Pokemon and
+    //      corrupted the team table for the rest of the run.
+    //    - current_moves[] cost a full party scan to build. Dropping it sent
+    //      MoveLearnDecider down its no-cache path, which declines every move
+    //      offered and collapses battle_move_priority to slot 1 only -- so one
+    //      heal trip permanently disabled the smart move handling and could
+    //      spam a status move until the 50-turn fatal guard tripped.
+    void on_healed(){
+        for (int i = 0; i < 6; i++){
+            fainted[i] = false;
+            out_of_pp[i] = false;
+        }
+        int lead = find_rotation_with_game_slot(1);
+        if (lead >= 0){
+            current_rotation = lead;
+        }
     }
 };
 
@@ -486,12 +644,20 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
     bool stop_program = false;
     PartyState party(party_size);
 
+    //  Consecutive recoverable failures. Every helper this program calls already
+    //  retries internally, so one escaping OperationFailedException means a single
+    //  operation genuinely failed -- previously that ended the whole run, which
+    //  meant one missed menu at 3am cost the entire overnight grind.
+    int consecutive_errors = 0;
+    constexpr int MAX_CONSECUTIVE_ERRORS = 4;
+
     if (startup_scan_ok){
         //  Rotation index = scan order (slot_1indexed - 1) at startup.
         for (const PartyScanResult& r : startup_scan){
             int rot = r.slot_1indexed - 1;
             if (rot >= 0 && rot < 6){
                 party.current_moves[rot] = r.read.move_slugs;
+                party.level[rot] = r.read.level;
                 //  Auto-update the team-table species cell when the scan
                 //  identifies a species that's different from (or absent
                 //  in) the row.
@@ -508,6 +674,42 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         }
     }
 
+    //  The table now ships 6 rows, but a config saved before that change still
+    //  has however many rows it had. Rows that don't exist can't be written to:
+    //  set_species() returns false and the Pokemon silently gets no pinned
+    //  moves, no STAB and no auto-species. Say so rather than letting it be
+    //  invisible.
+    if (TEAM_TABLE.row_count() < (size_t)party_size){
+        env.log(
+            "Team table has only " + std::to_string(TEAM_TABLE.row_count()) +
+                " row(s) but the party has " + std::to_string(party_size) +
+                ". Slots beyond row " + std::to_string(TEAM_TABLE.row_count()) +
+                " cannot be configured -- add rows to the Team Table option, or "
+                "reset this program's settings to pick up the new 6-row default.",
+            COLOR_RED
+        );
+        stats.errors++;
+    }
+
+    //  Auto-fill any team row the user left empty, using the scanned level and
+    //  moves so the suggestion only contains moves still reachable. Rows the
+    //  user filled in are never touched.
+    if (AUTOFILL_DESIRED_MOVES){
+        std::vector<int> levels;
+        std::vector<std::array<std::string, 4>> currents;
+        for (int i = 0; i < party_size; i++){
+            levels.push_back(party.level[i]);
+            currents.push_back(party.current_moves[i]);
+        }
+        size_t filled = TEAM_TABLE.autofill_desired_moves(false, levels, currents);
+        env.log(
+            filled == 0
+                ? std::string("Auto-fill: nothing to do (every row with a species already has moves chosen).")
+                : "Auto-fill: populated desired moves for " + std::to_string(filled) + " row(s).",
+            COLOR_BLUE
+        );
+    }
+
     //  Warn the user about any desired moves that the species (and its
     //  evolution chain) cannot learn. Non-blocking — the user can still run
     //  with mismatched picks if they want to.
@@ -519,6 +721,50 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         if (warnings.empty()){
             env.log("Team-table validation: all desired moves are in their species' chain learnsets.", COLOR_BLUE);
         }
+    }
+
+    //  Build and report the per-Pokemon move plan. This is the "what will
+    //  actually happen" summary: what each member already has, what it will
+    //  learn and at what level, what is already gone for good, and whether
+    //  evolution has to be held back to avoid forfeiting something.
+    {
+        env.log("---- Move plan ----", COLOR_BLUE);
+        for (int i = 0; i < party_size; i++){
+            party.plan[i] = TEAM_TABLE.build_plan(
+                (size_t)i, party.level[i], party.current_moves[i]
+            );
+            env.log(party.plan[i].to_log_string(), COLOR_BLUE);
+        }
+        int team_target = -1;
+        for (int i = 0; i < party_size; i++){
+            team_target = std::max(team_target, party.plan[i].target_level());
+        }
+        if (party.all_plans_complete()){
+            env.log("Move plan: every party member already has its desired moveset.", COLOR_BLUE);
+        }else if (team_target >= 0){
+            env.log(
+                "Move plan: highest level needed across the party is Lv " +
+                    std::to_string(team_target) + ".",
+                COLOR_BLUE
+            );
+        }
+        env.log("-------------------", COLOR_BLUE);
+    }
+
+    if (STOP_WHEN_TEAM_COMPLETE && !party.any_plan_has_goals()){
+        env.log(
+            "Stop-when-complete is on, but no party member has any desired moves configured "
+            "(the scan may have failed to identify species). The completion check is disabled "
+            "for this run so it does not exit claiming success.",
+            COLOR_RED
+        );
+    }else if (STOP_WHEN_TEAM_COMPLETE && party.all_plans_complete()){
+        env.log("Every party member already has its desired moveset. Nothing to do.", COLOR_BLUE);
+        if (GO_HOME_WHEN_DONE){
+            pbf_press_button(context, BUTTON_HOME, 200ms, 1000ms);
+        }
+        send_program_finished_notification(env, NOTIFICATION_PROGRAM_FINISH);
+        return;
     }
 
     while (!stop_program && (MAX_BATTLES == 0 || stats.battles_won.load() < MAX_BATTLES)){
@@ -585,9 +831,36 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
 
                 case BattleResult::opponentfainted:{
                     stats.battles_won++;
+                    consecutive_errors = 0;   //  A clean win means we are healthy again.
                     bool evolved = false;
+
+                    //  Per-Pokemon evolution hold. A stone evolution replaces the
+                    //  level-up learnset wholesale, so evolving before a
+                    //  stage-locked move is learned loses it permanently. The plan
+                    //  knows which moves those are; cancel evolution for this
+                    //  Pokemon until they are banked, then let it evolve normally.
+                    const MovePlan& active_plan = party.plan[party.current_rotation];
+                    bool prevent_evo = !!PREVENT_EVOLUTION;
+                    if (!prevent_evo && HOLD_EVOLUTION_FOR_MOVES && !active_plan.safe_to_evolve()){
+                        prevent_evo = true;
+                        std::vector<std::string> blocking = active_plan.evolution_blocking_moves();
+                        std::string list;
+                        for (size_t b = 0; b < blocking.size(); b++){
+                            if (b != 0){
+                                list += ", ";
+                            }
+                            list += blocking[b];
+                        }
+                        env.log(
+                            "Holding evolution for rotation " +
+                                std::to_string(party.current_rotation) +
+                                ": would forfeit " + list + ".",
+                            COLOR_BLUE
+                        );
+                    }
+
                     WildBattleExit exit_result = exit_wild_battle(
-                        env.console, context, false, !!PREVENT_EVOLUTION,
+                        env.console, context, false, prevent_evo,
                         &decider, LANGUAGE, &evolved
                     );
 
@@ -642,17 +915,25 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                     //  when no move was offered, so `evolved` must trigger a
                     //  rescan on its own.
                     if (exit_result == WildBattleExit::LearnHandled || evolved){
+                        //  Scan the PHYSICAL slot the active Pokemon occupies, not
+                        //  the rotation index. After any lead switch the two differ,
+                        //  and using the rotation index scanned a different party
+                        //  member -- writing its moves into this one's cache and
+                        //  overwriting the wrong team-table row.
+                        const int active_slot = party.game_slot[party.current_rotation];
                         env.log(
                             std::string(evolved ? "Evolution" : "Move learn") +
-                            " occurred. Rescanning slot " + std::to_string(party.current_rotation + 1) +
-                            " to refresh species and move cache.",
+                            " occurred. Rescanning game slot " + std::to_string(active_slot) +
+                            " (rotation " + std::to_string(party.current_rotation) +
+                            ") to refresh species and move cache.",
                             COLOR_BLUE
                         );
                         try{
                             PartyScanResult r = scan_party_slot(
-                                env, context, LANGUAGE, party.current_rotation + 1
+                                env, context, LANGUAGE, active_slot
                             );
                             party.current_moves[party.current_rotation] = r.read.move_slugs;
+                            party.level[party.current_rotation] = r.read.level;
                             //  Evolutions can also fire on level-up. If the
                             //  detected species changed, update the table row
                             //  so subsequent battles use the new species.
@@ -669,14 +950,54 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                             env.log(std::string("Post-learn rescan failed: ") + e.message() + ". Move cache may be stale.", COLOR_RED);
                             stats.errors++;
                         }
+
+                        //  Rebuild this slot's plan from the refreshed species,
+                        //  level and moves. A rescan happens on exactly the events
+                        //  that can change the plan -- a move learned, or an
+                        //  evolution swapping in a different learnset -- so this is
+                        //  where the evolution hold and the completion check get
+                        //  their new answer.
+                        const size_t rot = (size_t)party.current_rotation;
+                        MovePlan before = party.plan[rot];
+                        party.plan[rot] = TEAM_TABLE.build_plan(
+                            rot, party.level[rot], party.current_moves[rot]
+                        );
+                        if (!before.complete() && party.plan[rot].complete()){
+                            env.log(
+                                "Rotation " + std::to_string(party.current_rotation) +
+                                    " now has its full desired moveset.",
+                                COLOR_BLUE
+                            );
+                        }else{
+                            env.log(party.plan[rot].to_log_string(), COLOR_BLUE);
+                        }
+                    }
+
+                    //  Whole-team completion check.
+                    if (STOP_WHEN_TEAM_COMPLETE && party.any_plan_has_goals() && party.all_plans_complete()){
+                        env.log("Every party member now has its desired moveset. Stopping.", COLOR_BLUE);
+                        send_program_notification(
+                            env,
+                            NOTIFICATION_STATUS_UPDATE,
+                            COLOR_BLUE,
+                            "Team movesets complete.",
+                            {}, "",
+                            env.console.video().snapshot(),
+                            true
+                        );
+                        stop_program = true;
+                        battle_ongoing = false;
+                        break;
                     }
 
                     if (BATTLES_PER_HEAL_TRIP > 0){
                         uint64_t won = stats.battles_won.load();
                         if (won % BATTLES_PER_HEAL_TRIP == 0){
                             env.log("Cadence threshold reached (" + std::to_string(won) + " battles won). Taking heal trip.", COLOR_BLUE);
-                            routine_heal_trip(env, context, TRAVEL_METHOD, grind_location, heal_location);
-                            party = PartyState(party_size);
+                            routine_heal_trip(
+                                env, context, TRAVEL_METHOD, grind_location, heal_location,
+                                [&]{ party.on_healed(); }
+                            );
                             stats.healing_trips++;
                             failed_encounters = 0;
                             env.update_stats();
@@ -716,19 +1037,19 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                                 context.wait_for_all_requests();
                             }
                         }
-                        int old_slot1_rotation = party.find_rotation_with_game_slot(1);
-                        if (old_slot1_rotation >= 0){
-                            party.on_swap(party.current_rotation, old_slot1_rotation);
-                        }
+                        party.on_promote_to_lead(party.current_rotation);
                     }
 
                     //  Per-battle rotation: cycle the lead to the next alive party member.
                     if (multi_party && ROTATION_MODE == RotationMode::per_battle){
-                        int next = party.next_alive();
+                        //  Prefer a member that still needs moves, so a finished
+                        //  Pokemon stops soaking up experience the rest of the
+                        //  party needs.
+                        int next = party.next_alive_preferring_unfinished();
                         if (next >= 0 && next != party.current_rotation){
                             env.log("Per-battle rotation: switching lead to rotation slot " + std::to_string(next) + " (game slot " + std::to_string(party.game_slot[next]) + ").", COLOR_BLUE);
                             switch_party_lead_overworld(env.console, context, party.game_slot[next]);
-                            party.on_swap(party.current_rotation, next);
+                            party.on_promote_to_lead(next);
                             party.current_rotation = next;
                         }
                     }
@@ -742,26 +1063,44 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                     party.fainted[party.current_rotation] = true;
                     env.update_stats();
 
-                    if (multi_party && !party.all_fainted()){
+                    int next_after_faint = multi_party && !party.all_fainted()
+                        ? party.next_alive()
+                        : -1;
+                    if (next_after_faint >= 0){
                         //  Alive allies remain — use the forced-switch screen.
-                        int next = party.next_alive();
+                        //  next_alive() is checked for -1 above rather than being
+                        //  used to index game_slot[] directly: it starts scanning at
+                        //  offset 1, so it can return -1 even when the current
+                        //  rotation is alive, and an unchecked -1 here is an
+                        //  out-of-bounds read.
+                        const int next = next_after_faint;
                         env.log("Party member fainted. Forced-switch to rotation slot " + std::to_string(next) + " (game slot " + std::to_string(party.game_slot[next]) + ").", COLOR_BLUE);
                         select_forced_switch_slot(env.console, context, party.game_slot[next]);
                         party.current_rotation = next;
                         //  Continue battle_ongoing = true so spam_first_move is called again.
                     }else{
                         //  All fainted (whiteout) or single-Pokémon mode.
-                        if (HEAL_ON_FAINT || multi_party){
+                        //  HEAL_ON_FAINT is honoured in both modes: the option
+                        //  promises "accept the whiteout and resume instead of
+                        //  stopping", and the old `|| multi_party` made it
+                        //  impossible to turn off with rotation enabled.
+                        if (HEAL_ON_FAINT){
                             env.log("All party fainted — whiteout. Resuming via PC.", COLOR_BLUE);
-                            whiteout_resume(env, context, grind_location);
-                            party = PartyState(party_size);
+                            whiteout_resume(
+                                env, context, grind_location,
+                                [&]{ party.on_healed(); }
+                            );
                             stats.healing_trips++;
                             failed_encounters = 0;
                             env.update_stats();
                         }else{
-                            env.log("Lead Pokemon fainted. HEAL_ON_FAINT is off, stopping program.", COLOR_RED);
-                            pbf_mash_button(context, BUTTON_B, 5000ms);
-                            context.wait_for_all_requests();
+                            env.log("Party wiped. HEAL_ON_FAINT is off, stopping program.", COLOR_RED);
+                            //  Ride out the whiteout before stopping. The warp
+                            //  happens regardless of input, so simply mashing B for
+                            //  a few seconds used to leave the game parked on the
+                            //  "you scurried back" prompt -- and GO_HOME_WHEN_DONE
+                            //  then pressed HOME on top of it.
+                            whiteout_settle(env, context);
                             stop_program = true;
                         }
                         battle_ongoing = false;
@@ -774,17 +1113,26 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                     party.out_of_pp[party.current_rotation] = true;
                     env.update_stats();
 
-                    if (multi_party && ROTATION_MODE == RotationMode::pp_exhaustion && !party.all_need_heal(true)){
+                    const int next_with_pp =
+                        (multi_party && ROTATION_MODE == RotationMode::pp_exhaustion && !party.all_need_heal(true))
+                            ? party.next_alive(/*skip_pp_exhausted=*/true)
+                            : -1;
+                    if (next_with_pp >= 0){
                         //  PP exhausted but alive allies with PP remain — rotate overworld.
-                        int next = party.next_alive(/*skip_pp_exhausted=*/true);
+                        //  Guarded against -1 for the same reason as the faint path:
+                        //  next_alive() skips the current rotation, so it can return
+                        //  -1, and game_slot[-1] is an out-of-bounds read.
+                        const int next = next_with_pp;
                         env.log("PP exhaustion rotation: switching lead to rotation slot " + std::to_string(next) + " (game slot " + std::to_string(party.game_slot[next]) + ").", COLOR_BLUE);
                         switch_party_lead_overworld(env.console, context, party.game_slot[next]);
-                        party.on_swap(party.current_rotation, next);
+                        party.on_promote_to_lead(next);
                         party.current_rotation = next;
                     }else if (HEAL_ON_OUT_OF_PP || (multi_party && party.all_need_heal(true))){
                         env.log("Trigger: move 1 out of PP. Taking routine heal trip.", COLOR_BLUE);
-                        routine_heal_trip(env, context, TRAVEL_METHOD, grind_location, heal_location);
-                        party = PartyState(party_size);
+                        routine_heal_trip(
+                            env, context, TRAVEL_METHOD, grind_location, heal_location,
+                            [&]{ party.on_healed(); }
+                        );
                         stats.healing_trips++;
                         failed_encounters = 0;
                         env.update_stats();
@@ -796,17 +1144,76 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                     break;
                 }
 
-                case BattleResult::unknown:
-                    env.log("Battle ended without a faint. Continuing.");
+                case BattleResult::unknown:{
+                    //  Usually the wild Pokemon fled. Nothing normalizes the party
+                    //  here, so if a mid-battle forced switch happened earlier in
+                    //  this battle the active Pokemon is NOT in slot 1 -- and the
+                    //  next encounter will start with whoever the game leads with,
+                    //  not whoever was last on the field. Re-derive rather than
+                    //  leaving current_rotation pointing at the wrong Pokemon.
+                    env.log("Battle ended without a faint (wild Pokemon likely fled). Continuing.");
+                    if (multi_party){
+                        int lead = party.rotation_game_will_lead();
+                        if (lead >= 0 && lead != party.current_rotation){
+                            env.log(
+                                "Re-deriving active Pokemon: rotation " +
+                                std::to_string(party.current_rotation) + " -> " +
+                                std::to_string(lead) + " (game slot " +
+                                std::to_string(party.game_slot[lead]) + ").",
+                                COLOR_BLUE
+                            );
+                            party.current_rotation = lead;
+                        }
+                    }
                     env.update_stats();
                     battle_ongoing = false;
                     break;
                 }
+                }
             }
 
-        }catch (OperationFailedException&){
+        }catch (OperationFailedException& e){
             stats.errors++;
-            throw;
+            consecutive_errors++;
+            env.update_stats();
+            env.log(
+                "Recoverable failure (" + std::to_string(consecutive_errors) + "/" +
+                std::to_string(MAX_CONSECUTIVE_ERRORS) + "): " + e.message(),
+                COLOR_RED
+            );
+            if (consecutive_errors >= MAX_CONSECUTIVE_ERRORS){
+                env.log("Too many consecutive failures. Aborting.", COLOR_RED);
+                throw;
+            }
+
+            //  Back out of whatever screen we are stuck on and let the game settle.
+            pbf_mash_button(context, BUTTON_B, 3000ms);
+            context.wait_for_all_requests();
+            pbf_wait(context, 1000ms);
+            context.wait_for_all_requests();
+
+            //  The failure may have happened mid-heal-trip, so we could be anywhere
+            //  on the map. Walk back to the grind spot before resuming. This is a
+            //  no-op (single goal check) when we are already there.
+            try{
+                kanto_navigate_to(env, context, goal_for_grind_location(grind_location));
+            }catch (OperationFailedException& nav){
+                env.log(
+                    std::string("Could not re-navigate to the grind spot after recovery: ") +
+                    nav.message() + ". Will retry.",
+                    COLOR_RED
+                );
+            }
+
+            //  We no longer know who is on the field after an aborted operation.
+            if (multi_party){
+                int lead = party.rotation_game_will_lead();
+                if (lead >= 0){
+                    party.current_rotation = lead;
+                }
+            }
+            failed_encounters = 0;
+            continue;
         }
     }
     if (GO_HOME_WHEN_DONE){
