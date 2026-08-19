@@ -1512,6 +1512,96 @@ void switch_party_lead_overworld(ConsoleHandle& console, ProControllerContext& c
     console.log("Party lead swapped with slot " + std::to_string(game_slot_1indexed) + ".");
 }
 
+void switch_pokemon_in_battle(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed){
+    if (game_slot_1indexed < 2){
+        return;   //  Slot 1 is already out; nothing to do.
+    }
+
+    BattleMenuWatcher battle_menu(COLOR_RED);
+    PartyMenuWatcher party_screen(COLOR_RED);
+
+    //  Make sure we are actually on the battle menu before pressing directions.
+    //  The caller may arrive here straight off the send-out animation.
+    context.wait_for_all_requests();
+    int ret = wait_until(console, context, std::chrono::seconds(15), { battle_menu });
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "switch_pokemon_in_battle(): Battle menu did not appear.",
+            console
+        );
+    }
+
+    //  Battle menu is a 2x2 grid with the cursor defaulting to FIGHT:
+    //      FIGHT    BAG
+    //      POKEMON  RUN
+    //  so POKEMON is exactly one press DOWN. (flee_battle() reaches RUN with
+    //  RIGHT + DOWN, which is what pins the layout.)
+    console.log("Switch training: opening POKEMON from the battle menu.");
+    pbf_press_dpad(context, DPAD_DOWN, 160ms, 160ms);
+    context.wait_for_all_requests();
+
+    ret = run_until<ProControllerContext>(
+        console, context,
+        [](ProControllerContext& ctx){
+            pbf_press_button(ctx, BUTTON_A, 200ms, 1800ms);
+        },
+        { party_screen }
+    );
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "switch_pokemon_in_battle(): Party screen did not appear after choosing POKEMON.",
+            console
+        );
+    }
+
+    //  Same slot arithmetic as the forced-switch screen: reset to slot 1 (the
+    //  large left panel), then right into the right column and down.
+    context.wait_for_all_requests();
+    pbf_wait(context, 500ms);
+    context.wait_for_all_requests();
+    pbf_move_left_joystick(context, {-1, 0}, 200ms, 300ms);
+    pbf_move_left_joystick(context, {+1, 0}, 200ms, 300ms);
+    for (int i = 2; i < game_slot_1indexed; i++){
+        pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+    }
+
+    //  A opens the context sub-menu. For a voluntary switch the first entry is
+    //  SHIFT (the forced-switch screen shows SEND OUT in the same position), so
+    //  a second A confirms in both cases.
+    PartySelectionWatcher selection_open(COLOR_RED);
+    context.wait_for_all_requests();
+    ret = run_until<ProControllerContext>(
+        console, context,
+        [](ProControllerContext& ctx){
+            pbf_press_button(ctx, BUTTON_A, 200ms, 1800ms);
+        },
+        { selection_open }
+    );
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "switch_pokemon_in_battle(): Context sub-menu did not appear after selecting the slot.",
+            console
+        );
+    }
+    pbf_press_button(context, BUTTON_A, 200ms, 500ms);
+
+    //  The switch resolves, then the opponent takes its turn, then the battle
+    //  menu returns. Allow for the withdraw + send-out + one opposing move.
+    context.wait_for_all_requests();
+    ret = wait_until(console, context, std::chrono::seconds(20), { battle_menu });
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "switch_pokemon_in_battle(): Battle menu did not return after the switch.",
+            console
+        );
+    }
+    console.log("Switch training: slot " + std::to_string(game_slot_1indexed) + " is now active.");
+}
+
 void select_forced_switch_slot(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed){
     //  Called after spam_first_move() returns BattleResult::playerfainted when alive allies remain.
     //  The game shows the forced-switch party screen after advancing the faint dialog.

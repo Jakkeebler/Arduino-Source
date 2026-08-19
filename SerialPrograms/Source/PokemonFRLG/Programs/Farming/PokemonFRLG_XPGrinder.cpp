@@ -130,15 +130,27 @@ XPGrinder::XPGrinder()
         "Disabled: single-Pokémon mode (original behaviour).<br>"
         "Per Battle: cycle the lead after each won battle so each party member fights equally.<br>"
         "Faint Triggered: switch mid-battle using the forced-switch screen when the active Pokémon faints.<br>"
-        "PP Exhaustion: switch to the next member when move 1 runs out of PP instead of healing immediately.",
+        "PP Exhaustion: switch to the next member when move 1 runs out of PP instead of healing immediately.<br>"
+        "Switch Training: keep a weak Pokémon in slot 1 so it is sent out and counts as a battle "
+        "participant, then immediately switch to the Fighter Slot below to actually win. Gen 3 splits "
+        "EXP among everyone sent out, and switching resolves before the opponent moves, so the trainee "
+        "levels without ever taking a hit. This is how you raise a Magikarp.",
         {
-            {RotationMode::disabled,       "disabled",       "Disabled"},
-            {RotationMode::per_battle,     "per_battle",     "Per Battle"},
-            {RotationMode::faint_triggered,"faint_triggered","Faint Triggered"},
-            {RotationMode::pp_exhaustion,  "pp_exhaustion",  "PP Exhaustion"},
+            {RotationMode::disabled,        "disabled",        "Disabled"},
+            {RotationMode::per_battle,      "per_battle",      "Per Battle"},
+            {RotationMode::faint_triggered, "faint_triggered", "Faint Triggered"},
+            {RotationMode::pp_exhaustion,   "pp_exhaustion",   "PP Exhaustion"},
+            {RotationMode::switch_training, "switch_training", "Switch Training"},
         },
         LockMode::LOCK_WHILE_RUNNING,
         RotationMode::disabled
+    )
+    , FIGHTER_SLOT(
+        "<b>Fighter Slot:</b><br>Only used in Switch Training mode. The party slot (2–6) that is "
+        "switched in to do the fighting while slot 1 collects participation EXP. Put something that "
+        "can one-shot the local wild Pokémon here.",
+        LockMode::LOCK_WHILE_RUNNING,
+        2, 2, 6
     )
     , PARTY_SIZE(
         "<b>Party Size:</b><br>Number of Pokémon to rotate through (slots 1–N). Only used when rotation mode is not Disabled. "
@@ -258,6 +270,7 @@ XPGrinder::XPGrinder()
     PA_ADD_OPTION(AUTO_HEAL_LOCATION);
     PA_ADD_OPTION(HEAL_LOCATION);
     PA_ADD_OPTION(ROTATION_MODE);
+    PA_ADD_OPTION(FIGHTER_SLOT);
     PA_ADD_OPTION(PARTY_SIZE);
     PA_ADD_OPTION(LANGUAGE);
     PA_ADD_OPTION(AUTO_SCAN_ON_START);
@@ -706,6 +719,9 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         "; HEAL_LOCATION=" + HealLocationId_Database().find(heal_location)->display +
         (AUTO_HEAL_LOCATION ? " (auto)" : " (manual)") +
         "; ROTATION_MODE=" + std::to_string((int)(RotationMode)ROTATION_MODE) +
+        (ROTATION_MODE == RotationMode::switch_training
+            ? "; FIGHTER_SLOT=" + std::to_string((uint64_t)FIGHTER_SLOT)
+            : std::string()) +
         "; PARTY_SIZE=" + std::to_string(party_size) +
         "; HEAL_ON_FAINT=" + bool_str(HEAL_ON_FAINT) +
         "; HEAL_ON_OUT_OF_PP=" + bool_str(HEAL_ON_OUT_OF_PP) +
@@ -713,6 +729,22 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         "; TRAVEL_METHOD=" + travel_method_string(TRAVEL_METHOD) + ".",
         COLOR_BLUE
     );
+
+    //  Switch training needs a fighter that actually exists. Catching this at
+    //  startup is the difference between one clear message and a run that spends
+    //  the night failing a party-screen navigation once per battle.
+    if (ROTATION_MODE == RotationMode::switch_training &&
+        (int)(uint64_t)FIGHTER_SLOT > party_size
+    ){
+        OperationFailedException::fire(
+            ErrorReport::NO_ERROR_REPORT,
+            "Switch Training is set to fight with slot " +
+                std::to_string((uint64_t)FIGHTER_SLOT) + ", but the party only has " +
+                std::to_string(party_size) + " Pokemon. Lower the Fighter Slot, or add "
+                "Pokemon to the party.",
+            env.console
+        );
+    }
 
     bool spin_leftright = true;
     uint8_t failed_encounters = 0;
@@ -974,6 +1006,38 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                 }
                 if (!IGNORE_SHINIES){
                     break;
+                }
+            }
+
+            //  Switch training.
+            //
+            //  Slot 1 holds the trainee and has just been sent out, which is all
+            //  Gen 3 requires for it to share the battle's EXP. Withdraw it now
+            //  for something that can actually win. The switch resolves before
+            //  the opponent's move, so the trainee never takes a hit -- that is
+            //  what makes this safe for a level 5 Magikarp against wild Pokemon
+            //  that would otherwise flatten it.
+            //
+            //  current_rotation follows the Pokemon that is actually out, so the
+            //  move decider and PP tracking reason about the fighter rather than
+            //  the trainee for the rest of the battle. In-battle switches do not
+            //  reorder the party, so the next encounter starts with the trainee
+            //  in front again and we repeat.
+            if (ROTATION_MODE == RotationMode::switch_training){
+                const int fighter_slot = (int)(uint64_t)FIGHTER_SLOT;
+                try{
+                    switch_pokemon_in_battle(env.console, context, fighter_slot);
+                    party.current_rotation = std::min(fighter_slot - 1, party.party_size - 1);
+                }catch (const OperationFailedException& e){
+                    //  Fall through and fight with whoever is out. Losing the
+                    //  trainee's share of one battle's EXP is a far better
+                    //  outcome than ending the run.
+                    env.log(
+                        std::string("Switch training: could not swap in slot ") +
+                            std::to_string(fighter_slot) + " (" + e.message() +
+                            "). Fighting with the current lead this battle.",
+                        COLOR_RED
+                    );
                 }
             }
 

@@ -43,6 +43,12 @@ public:
         per_battle,
         faint_triggered,
         pp_exhaustion,
+        //  Switch training: the lead is a Pokemon too weak to fight (a Magikarp,
+        //  a freshly caught low-level). It is sent out so it counts as a battle
+        //  participant, then immediately withdrawn for a Pokemon that can win.
+        //  Gen 3 splits EXP among everyone sent out, so the trainee is paid for
+        //  showing up without ever taking a hit.
+        switch_training,
     };
 
     XPGrinder();
@@ -69,6 +75,7 @@ private:
     EnumDropdownOption<HealLocationId> HEAL_LOCATION;
 
     EnumDropdownOption<RotationMode> ROTATION_MODE;
+    SimpleIntegerOption<uint64_t> FIGHTER_SLOT;
     SimpleIntegerOption<uint64_t> PARTY_SIZE;
     OCR::LanguageOCROption LANGUAGE;
     BooleanCheckBoxOption AUTO_SCAN_ON_START;

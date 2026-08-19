@@ -139,6 +139,19 @@ void switch_party_lead_overworld(ConsoleHandle& console, ProControllerContext& c
 // Call after spam_first_move() returns BattleResult::playerfainted when alive allies remain.
 void select_forced_switch_slot(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed);
 
+// VOLUNTARY mid-battle switch, from the battle menu (not a faint).
+//
+// Used for switch training: the weak Pokemon is sent out at the start of the battle so it
+// counts as a participant, then this swaps in a Pokemon that can actually win. In Gen 3 the
+// EXP is split among everyone that was sent out, so the trainee is paid for showing up.
+//
+// Safe by construction: switching resolves before the opponent's move, so the trainee never
+// takes a hit on the turn it is withdrawn.
+//
+// Assumes the battle menu (FIGHT / BAG / POKéMON / RUN) is showing or about to show, and
+// returns once the battle menu is back with the new Pokemon active.
+void switch_pokemon_in_battle(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed);
+
 // Starting from the start menu, a sub-screen of the start menu, or the overworld, navigate to the bag
 void open_bag_from_overworld(ConsoleHandle& console, ProControllerContext& context, StartMenuContext menu_context = StartMenuContext::STANDARD);
 
