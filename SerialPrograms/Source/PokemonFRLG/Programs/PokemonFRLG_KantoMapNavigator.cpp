@@ -44,6 +44,17 @@ constexpr auto STEP_HOLD = std::chrono::milliseconds(150);
 constexpr auto STEP_RELEASE = std::chrono::milliseconds(80);
 constexpr double MIN_CONFIDENCE = 0.40;
 
+//  Hard floor for the void-compensated confidence threshold. Even a viewport
+//  that is mostly blank must clear this, or a fade or a menu would start
+//  matching. See MIN_CONFIDENCE compensation in the poll loop below.
+constexpr double MIN_CONFIDENCE_FLOOR = 0.20;
+
+//  Failed hinted polls before abandoning the hint for a cold full-map fix.
+//  Small on purpose: a correct hint resolves on the first or second poll, so
+//  anything beyond that is a hint we should stop trusting. A cold fix costs a
+//  couple of seconds; refusing to take one costs the whole run.
+constexpr int HINT_GIVEUP_POLLS = 3;
+
 //  A Gen-3 walk cycle is ~16 frames (~267 ms) and the camera keeps scrolling
 //  briefly after the stick is released. Capturing before the scroll settles
 //  leaves the viewport offset by up to half a tile, which is exactly the error
@@ -75,6 +86,13 @@ constexpr int MAX_REJECTED_JUMPS = 3;
 //  accepting that the walkable mask is simply wrong here and walking greedily.
 constexpr int MAX_ASTAR_FAILURES_BEFORE_GREEDY = 2;
 
+//  How many steps to spend escaping a start tile the mask calls blocked before
+//  giving up. One step should normally be enough -- a doorway is adjacent to
+//  open ground by construction. More than a couple means we are inside a region
+//  the mask has wrong wholesale, and pressing on just burns the step budget
+//  somewhere the map cannot describe.
+constexpr int MAX_BLOCKED_START_ESCAPES = 4;
+
 Step kanto_step_to_joystick(KantoStep ks){
     switch (ks){
     case KantoStep::North: return STEP_NORTH;
@@ -88,10 +106,37 @@ Step kanto_step_to_joystick(KantoStep ks){
 }  // namespace
 
 
+static void kanto_navigate_impl(
+    SingleSwitchProgramEnvironment& env,
+    ProControllerContext& context,
+    const KantoGoal& goal,
+    const KantoGoal* start_hint,
+    int max_steps
+);
+
 void kanto_navigate_to(
     SingleSwitchProgramEnvironment& env,
     ProControllerContext& context,
     const KantoGoal& goal,
+    int max_steps
+){
+    kanto_navigate_impl(env, context, goal, nullptr, max_steps);
+}
+void kanto_navigate_to(
+    SingleSwitchProgramEnvironment& env,
+    ProControllerContext& context,
+    const KantoGoal& goal,
+    const KantoGoal& start_hint,
+    int max_steps
+){
+    kanto_navigate_impl(env, context, goal, &start_hint, max_steps);
+}
+
+static void kanto_navigate_impl(
+    SingleSwitchProgramEnvironment& env,
+    ProControllerContext& context,
+    const KantoGoal& goal,
+    const KantoGoal* start_hint,
     int max_steps
 ){
     const KantoMapDetector& detector = KantoMapDetector::instance();
@@ -102,6 +147,33 @@ void kanto_navigate_to(
     bool have_prev_pos = false;
     int prev_x = -999, prev_y = -999;
     Step last_step = STEP_NORTH;
+
+    //  Seed the search window from the caller's belief about where we are.
+    //
+    //  Without this the first fix is a cold full-map match, which is the only
+    //  kind the detector's ambiguity gate applies to. Standing in the middle of
+    //  Route 1's grass -- a field of identical tiles -- the gate refuses every
+    //  candidate and the run stalls before taking a step, burning ~10 s per poll
+    //  on an unconstrained 6528x6400 match. Observed 2026-08-18 16:27: sixteen
+    //  consecutive "Position unknown", best tile (303,67) conf=0.56, nowhere
+    //  near Route 1, until the run aborted.
+    //
+    //  The hint is only a starting guess. It is not trusted: the very first
+    //  detection bypasses the motion gate (we cannot know how far off the hint
+    //  was), and from then on the normal gate applies.
+    bool seeded_hint_unconfirmed = false;
+    if (start_hint != nullptr){
+        prev_x = start_hint->tile_x;
+        prev_y = start_hint->tile_y;
+        have_prev_pos = true;
+        seeded_hint_unconfirmed = true;
+        env.log(
+            std::string("Kanto navigator: seeding the search window at (") +
+            std::to_string(prev_x) + "," + std::to_string(prev_y) +
+            ") -- where the program believes it is.",
+            COLOR_BLUE
+        );
+    }
 
     //  Direction the player is currently facing. In Gen 3 the first tap in a new
     //  direction turns the player in place without moving them, so a "didn't
@@ -119,6 +191,11 @@ void kanto_navigate_to(
     int rejected_jumps = 0;
     //  Consecutive A* failures. Reset whenever A* returns a step.
     int astar_failures = 0;
+    //  Consecutive steps spent escaping a start tile the mask calls blocked.
+    //  Reset as soon as we are standing somewhere A* can plan from.
+    int blocked_start_escapes = 0;
+    //  Log the unrendered-map compensation once per navigation run, not per poll.
+    bool void_reported = false;
 
     //  Flee an encounter found mid-navigation and mark the step interrupted.
     //  Shared by the pre-locate battle gate and the unknown-position probe.
@@ -179,9 +256,51 @@ void kanto_navigate_to(
             }
         }
 
+        //  Compensate for unrendered map.
+        //
+        //  Kanto-Combined.png leaves the space outside its stitched sub-maps
+        //  pure white, while the game renders its border block there. A viewport
+        //  overlapping a void is therefore compared against a partly meaningless
+        //  template, and TM_CCOEFF_NORMED drops roughly in proportion to how much
+        //  of the template is blank. Holding such a viewport to the full 0.40
+        //  floor asks it to clear a bar it cannot reach.
+        //
+        //  Route1SouthGrass{78,235} is 6 tiles from the void that starts at x=84
+        //  on that row: its viewport always contained 2 white columns and peaked
+        //  at ~0.76 instead of the ~0.98 seen on interior ground. Two tiles of
+        //  drift east put it under 0.40 and localization died mid-run on
+        //  2026-08-18 -- 16 polls, all rejecting a correct fix at 0.355.
+        //
+        //  Only relax for HINTED matches. The window is +-HINT_RADIUS_TILES, so a
+        //  wrong accept is a few tiles out at worst and the motion gate below
+        //  catches it. A cold full-map match keeps the full floor, because there a
+        //  wrong accept can land anywhere in Kanto.
+        double hinted_min_conf = MIN_CONFIDENCE;
+        if (have_prev_pos){
+            const double void_fraction = detector.viewport_void_fraction(prev_x, prev_y);
+            if (void_fraction > 0.0){
+                hinted_min_conf = std::max(
+                    MIN_CONFIDENCE * (1.0 - void_fraction),
+                    MIN_CONFIDENCE_FLOOR
+                );
+                if (!void_reported){
+                    char vbuf[260];
+                    std::snprintf(
+                        vbuf, sizeof(vbuf),
+                        "Map around (%d,%d) is %.0f%% unrendered -- the template is partly blank "
+                        "here, so the hinted confidence floor drops %.2f -> %.2f.",
+                        prev_x, prev_y, void_fraction * 100.0,
+                        MIN_CONFIDENCE, hinted_min_conf
+                    );
+                    env.log(vbuf, COLOR_YELLOW);
+                    void_reported = true;
+                }
+            }
+        }
+
         std::optional<KantoPosition> pos = snap
             ? (have_prev_pos
-                ? detector.locate(*snap.frame, MIN_CONFIDENCE, prev_x, prev_y, HINT_RADIUS_TILES)
+                ? detector.locate(*snap.frame, hinted_min_conf, prev_x, prev_y, HINT_RADIUS_TILES)
                 : detector.locate(*snap.frame, MIN_CONFIDENCE))
             : std::nullopt;
 
@@ -190,7 +309,7 @@ void kanto_navigate_to(
         //  Discard it rather than letting it seed the next poll's hint window,
         //  which is how a single bad match used to lock navigation onto the wrong
         //  part of the map permanently.
-        if (pos && have_prev_pos){
+        if (pos && have_prev_pos && !seeded_hint_unconfirmed){
             int jump = std::max(
                 std::abs(pos->tile_x - prev_x),
                 std::abs(pos->tile_y - prev_y)
@@ -259,10 +378,20 @@ void kanto_navigate_to(
             //  when we have one: an unconstrained match on the 6528x6400 map
             //  allocates a ~157 MB result Mat (plus a clone) and costs seconds,
             //  which is far too expensive to pay just to print a line.
-            std::optional<KantoPosition> raw = !snap ? std::nullopt
-                : (have_prev_pos
-                    ? detector.locate(*snap.frame, -2.0, prev_x, prev_y, HINT_RADIUS_TILES)
-                    : detector.locate(*snap.frame, -2.0));
+            //  With no hint the only diagnostic available is an unconstrained
+            //  match, and that is genuinely expensive: a ~157 MB result Mat plus
+            //  a clone, several seconds of wall clock. Paying it on every failed
+            //  poll turned a 15-poll timeout into 150 s of thrash on 8/18. Run it
+            //  on the first failure and then sparsely -- enough to keep the log
+            //  useful without making the failure path the slow path.
+            std::optional<KantoPosition> raw;
+            if (snap){
+                if (have_prev_pos){
+                    raw = detector.locate(*snap.frame, -2.0, prev_x, prev_y, HINT_RADIUS_TILES);
+                }else if (unknown_polls == 1 || unknown_polls % 5 == 0){
+                    raw = detector.locate(*snap.frame, -2.0);
+                }
+            }
             if (raw){
                 char buf[160];
                 std::snprintf(
@@ -279,6 +408,26 @@ void kanto_navigate_to(
                     COLOR_YELLOW
                 );
             }
+            //  Give up on the hint and go cold.
+            //
+            //  The motion gate only fires on detections we ACCEPT, so a hint that
+            //  is simply wrong -- the player drifted further than the search
+            //  radius while we weren't looking -- produces nothing to reject and
+            //  the window never widens. Before this, all 15 polls re-searched the
+            //  same wrong +-4 tiles and the run died. Observed 2026-08-19: heal
+            //  trip seeded (78,235); the player was actually at (81,226), nine
+            //  tiles north, so every poll was doomed from the first.
+            if (have_prev_pos && unknown_polls == HINT_GIVEUP_POLLS){
+                env.log(
+                    "Hinted search has failed " + std::to_string(HINT_GIVEUP_POLLS) +
+                        " times -- the player is not near where we believed. "
+                        "Dropping the hint and re-localizing from the full map.",
+                    COLOR_YELLOW
+                );
+                have_prev_pos = false;
+                seeded_hint_unconfirmed = false;
+                void_reported = false;
+            }
             if (unknown_polls > MAX_UNKNOWN_POLLS){
                 OperationFailedException::fire(
                     ErrorReport::SEND_ERROR_REPORT,
@@ -291,6 +440,20 @@ void kanto_navigate_to(
             continue;
         }
         unknown_polls = 0;
+
+        //  The seeded hint has now produced a real detection, so from here on the
+        //  motion gate applies normally.
+        if (seeded_hint_unconfirmed){
+            char seed_buf[200];
+            std::snprintf(
+                seed_buf, sizeof(seed_buf),
+                "Kanto navigator: first fix (%d,%d) conf=%.3f, %d tile(s) from the seeded hint.",
+                pos->tile_x, pos->tile_y, pos->confidence,
+                std::max(std::abs(pos->tile_x - prev_x), std::abs(pos->tile_y - prev_y))
+            );
+            env.log(seed_buf, COLOR_BLUE);
+            seeded_hint_unconfirmed = false;
+        }
 
         //  Goal check.
         if (std::abs(pos->tile_x - goal.tile_x) <= goal.tolerance &&
@@ -344,12 +507,97 @@ void kanto_navigate_to(
         prev_y = pos->tile_y;
         have_prev_pos = true;
 
+        //  Blocked start tile.
+        //
+        //  kanto_pathfind_next_step() returns nullopt both when it cannot find a
+        //  route and when the tile we are standing on is itself blocked in the
+        //  mask -- but those need opposite responses, so separate them here
+        //  rather than letting the A*-failure path guess.
+        //
+        //  A blocked *start* is not a localization problem: re-localizing returns
+        //  the same tile, and the greedy fallback is actively harmful because it
+        //  walks the dominant axis from a tile the map does not understand. On
+        //  2026-08-18 that marched the bot out of the Viridian Poke Center door
+        //  (74,206 -- blocked in the mask, and the player was standing on it)
+        //  straight down x=74 into the fence at (74,215), where it burned the
+        //  entire no-progress budget and ended the run.
+        //
+        //  The fix is small and local: step onto whichever neighbouring tile the
+        //  mask does accept, preferring the one nearest the goal, and let A* take
+        //  over from solid ground. A doorway is adjacent to open ground by
+        //  construction, so this normally costs exactly one step.
+        bool step_chosen = false;
+        if (!kanto_tile_walkable(pos->tile_x, pos->tile_y)){
+            blocked_start_escapes++;
+            if (blocked_start_escapes > MAX_BLOCKED_START_ESCAPES){
+                OperationFailedException::fire(
+                    ErrorReport::SEND_ERROR_REPORT,
+                    "Standing on a tile the walkable mask calls blocked at (" +
+                        std::to_string(pos->tile_x) + "," +
+                        std::to_string(pos->tile_y) + ") and could not escape it in " +
+                        std::to_string(MAX_BLOCKED_START_ESCAPES) +
+                        " steps. The walkable mask is wrong around here.",
+                    env.console
+                );
+            }
+
+            const struct{ int dx; int dy; Step step; } ESCAPES[4] = {
+                { 0, -1, STEP_NORTH},
+                { 0, +1, STEP_SOUTH},
+                {+1,  0, STEP_EAST },
+                {-1,  0, STEP_WEST },
+            };
+            bool have_escape = false;
+            Step escape = STEP_NORTH;
+            int best_dist = 0;
+            for (const auto& e : ESCAPES){
+                int nx = pos->tile_x + e.dx;
+                int ny = pos->tile_y + e.dy;
+                if (!kanto_tile_walkable(nx, ny)){
+                    continue;
+                }
+                int dist = std::abs(nx - goal.tile_x) + std::abs(ny - goal.tile_y);
+                if (!have_escape || dist < best_dist){
+                    have_escape = true;
+                    best_dist = dist;
+                    escape = e.step;
+                }
+            }
+            if (!have_escape){
+                OperationFailedException::fire(
+                    ErrorReport::SEND_ERROR_REPORT,
+                    "Standing on a tile the walkable mask calls blocked at (" +
+                        std::to_string(pos->tile_x) + "," +
+                        std::to_string(pos->tile_y) +
+                        "), and all four neighbours are blocked too. The walkable mask is "
+                        "wrong around here.",
+                    env.console
+                );
+            }
+
+            char esc_buf[240];
+            std::snprintf(
+                esc_buf, sizeof(esc_buf),
+                "Start tile (%d,%d) is blocked in the walkable mask -- A* cannot plan from "
+                "here. Stepping %s onto walkable ground and re-planning (%d/%d).",
+                pos->tile_x, pos->tile_y, escape.name,
+                blocked_start_escapes, MAX_BLOCKED_START_ESCAPES
+            );
+            env.log(esc_buf, COLOR_YELLOW);
+            last_step = escape;
+            step_chosen = true;
+        }else{
+            blocked_start_escapes = 0;
+        }
+
         //  A* pathfind to the goal.
-        std::optional<KantoStep> next = kanto_pathfind_next_step(
-            pos->tile_x, pos->tile_y,
-            goal.tile_x, goal.tile_y
-        );
-        if (!next){
+        std::optional<KantoStep> next = step_chosen
+            ? std::nullopt
+            : kanto_pathfind_next_step(
+                  pos->tile_x, pos->tile_y,
+                  goal.tile_x, goal.tile_y
+              );
+        if (!next && !step_chosen){
             astar_failures++;
 
             //  A* failing means one of two things: the position we handed it is
@@ -407,7 +655,7 @@ void kanto_navigate_to(
                 COLOR_YELLOW
             );
             last_step = fb;
-        }else{
+        }else if (next){
             astar_failures = 0;
             last_step = kanto_step_to_joystick(*next);
         }

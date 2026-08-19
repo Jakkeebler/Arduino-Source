@@ -97,6 +97,25 @@ void kanto_navigate_to(
     int max_steps = 200
 );
 
+//  Same, but seeded with where the caller believes the player already is.
+//
+//  The first fix of a navigation run is otherwise a *cold* full-map match, and a
+//  cold match is the only kind subject to the detector's ambiguity gate. In
+//  repetitive terrain -- a field of identical tall-grass tiles, say -- that gate
+//  correctly refuses to guess, so the run stalls before it takes a single step.
+//  A hinted match is both far cheaper and not ambiguity-gated.
+//
+//  Pass the goal the program last navigated to, or the tile it has been standing
+//  on. A wrong hint is self-correcting: the motion gate rejects detections that
+//  disagree with it and drops to a cold fix after MAX_REJECTED_JUMPS.
+void kanto_navigate_to(
+    SingleSwitchProgramEnvironment& env,
+    ProControllerContext& context,
+    const KantoGoal& goal,
+    const KantoGoal& start_hint,
+    int max_steps = 200
+);
+
 
 }
 }
