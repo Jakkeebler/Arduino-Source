@@ -30,9 +30,74 @@ namespace{
 
 constexpr uint8_t WALKABLE_CODE = 0;
 
+//  Hand-verified corrections layered on top of the generated mask.
+//
+//  KANTO_MASK is derived from the map image, so it gets building interiors right
+//  and building *doorways* wrong: the generator sees roof/wall pixels and marks
+//  the whole footprint blocked, including the tile the game stands you on when
+//  you walk out of the door. A* refuses to plan from a blocked start tile (see
+//  kanto_pathfind_next_step below), so a single wrong cell under a door makes
+//  every route that begins at that door unplannable.
+//
+//  These live here rather than in the generated header on purpose: that file is
+//  regenerated wholesale from the map image and would silently drop hand edits.
+//
+//  Each entry must be justified against the map image or against observed
+//  behaviour -- never against a guess about what "looks" walkable.
+//
+//  Rectangles are inclusive on all four sides. A single tile is a 1x1 rect.
+struct MaskOverride{
+    int x0;
+    int y0;
+    int x1;
+    int y1;
+    bool walkable;
+};
+constexpr MaskOverride MASK_OVERRIDES[] = {
+    //  --- Viridian City Poke Center doorway -------------------------------
+    //  The blue door tile of the Poke Center, verified against
+    //  Resources/PokemonFRLG/Maps/Kanto-Combined.png: the building occupies
+    //  x=72..76, y=204..206 and its door is the tile at (74,206).
+    //  leave_pokecenter() stands the player exactly here, and the generator
+    //  marked the whole footprint blocked -- so A* could not plan from the tile
+    //  the player was standing on, failed on every post-heal walk back, and
+    //  handed the run to the greedy fallback.
+    //  The goal one square south, ViridianPokeCenterEntrance{74,207}, was
+    //  already correct.
+    {74, 206, 74, 206, true},
+
+    //  --- Route 1 north tree corridor -------------------------------------
+    //  Rows 215..221 are a solid tree wall either side of a four-tile sand
+    //  path. Verified against the map image: the path is EXACTLY x=70..73, with
+    //  trees at x=66..69 to the west and x=74..82 to the east, canopy tops on
+    //  215-216, body on 217-220 and trunks on 221.
+    //
+    //  The generator got rows 217-221 mostly right but marked rows 215 and 216
+    //  entirely walkable -- it reads the pale highlight at the top of a tree
+    //  sprite as open ground -- plus the inner-edge tiles (69,218), (74,218),
+    //  (69,220) and (74,220) for the same reason.
+    //
+    //  Consequence, observed three times on 2026-08-18: A* treated row 215/216
+    //  as an open highway and routed south down x=74 straight into a tree,
+    //  where the player pressed south eight times without moving and the run
+    //  died. The correct route is the one the outbound trip used unprompted --
+    //  down x=73.
+    //
+    //  These are stated as the full tree block rather than as a diff against
+    //  the generated values: most cells already agree, and spelling out the
+    //  real geometry is what makes the entry checkable later.
+    {66, 215, 69, 221, false},
+    {74, 215, 82, 221, false},
+};
+
 bool walkable(int x, int y){
     if (x < 0 || y < 0 || x >= KANTO_MASK_COLS || y >= KANTO_MASK_ROWS){
         return false;
+    }
+    for (const MaskOverride& o : MASK_OVERRIDES){
+        if (x >= o.x0 && x <= o.x1 && y >= o.y0 && y <= o.y1){
+            return o.walkable;
+        }
     }
     return KANTO_MASK[y][x] == WALKABLE_CODE;
 }

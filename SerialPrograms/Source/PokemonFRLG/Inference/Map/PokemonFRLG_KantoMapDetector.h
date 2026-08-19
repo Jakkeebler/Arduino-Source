@@ -10,7 +10,9 @@
 #ifndef PokemonAutomation_PokemonFRLG_KantoMapDetector_H
 #define PokemonAutomation_PokemonFRLG_KantoMapDetector_H
 
+#include <cstdint>
 #include <optional>
+#include <vector>
 #include <opencv2/core.hpp>
 #include "CommonFramework/ImageTypes/ImageViewRGB32.h"
 
@@ -65,12 +67,39 @@ public:
     int map_width_tiles() const { return m_width_tiles; }
     int map_height_tiles() const { return m_height_tiles; }
 
+    //  --- Unrendered ("void") regions of the combined map -------------------
+    //
+    //  Kanto-Combined.png is a stitch of several sub-maps, and the areas
+    //  between and beyond them are left pure white. The game, standing at the
+    //  edge of a sub-map, renders its border block there instead -- so any
+    //  viewport that overlaps a void is being compared against a template that
+    //  is partly meaningless, and its correlation score is depressed in
+    //  proportion.
+    //
+    //  This is not hypothetical. Route1SouthGrass{78,235} sits 6 tiles from the
+    //  void that starts at x=84 on that row, so its viewport always included
+    //  2 white columns and never scored better than ~0.76 (vs 0.98 on interior
+    //  ground). A couple of tiles of drift east took it under the 0.40 floor
+    //  and localization stopped working entirely, mid-run, on 2026-08-18.
+
+    //  True if this tile has real map content; false if it is unrendered.
+    bool tile_rendered(int tile_x, int tile_y) const;
+
+    //  Fraction (0..1) of the 15x10-tile viewport centred on this player tile
+    //  that is unrendered. 0.0 means the template is entirely valid.
+    double viewport_void_fraction(int tile_x, int tile_y) const;
+
 private:
     KantoMapDetector();
+    void build_rendered_mask();
 
     cv::Mat m_combined;   //  BGR.
     int m_width_tiles = 0;
     int m_height_tiles = 0;
+
+    //  One byte per tile, row-major, m_width_tiles * m_height_tiles.
+    //  1 = rendered, 0 = void. Built once at construction.
+    std::vector<uint8_t> m_rendered;
 };
 
 

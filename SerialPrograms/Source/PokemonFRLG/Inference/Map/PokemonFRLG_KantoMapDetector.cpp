@@ -143,6 +143,76 @@ KantoMapDetector::KantoMapDetector(){
     }
     m_width_tiles = m_combined.cols / TILE_PX;
     m_height_tiles = m_combined.rows / TILE_PX;
+    build_rendered_mask();
+}
+
+//  Classify every tile of the combined map as rendered or void.
+//
+//  The stitched map leaves everything outside its sub-maps pure white
+//  (255,255,255). Sampling is enough to tell that apart from real content: no
+//  FRLG overworld tile is uniformly pure white, and a genuine white tile (an
+//  interior floor, say) still carries outline pixels. Requiring EVERY sampled
+//  pixel to be pure white keeps false positives at zero, which matters because
+//  a tile wrongly called void would quietly relax the confidence floor.
+void KantoMapDetector::build_rendered_mask(){
+    m_rendered.assign((size_t)m_width_tiles * m_height_tiles, 1);
+    if (m_combined.empty()){
+        return;
+    }
+
+    size_t void_tiles = 0;
+    for (int ty = 0; ty < m_height_tiles; ty++){
+        for (int tx = 0; tx < m_width_tiles; tx++){
+            bool all_white = true;
+            for (int dy = 0; dy < TILE_PX && all_white; dy += 4){
+                const cv::Vec3b* row = m_combined.ptr<cv::Vec3b>(ty * TILE_PX + dy);
+                for (int dx = 0; dx < TILE_PX; dx += 4){
+                    const cv::Vec3b& p = row[tx * TILE_PX + dx];
+                    if (p[0] < 250 || p[1] < 250 || p[2] < 250){
+                        all_white = false;
+                        break;
+                    }
+                }
+            }
+            if (all_white){
+                m_rendered[(size_t)ty * m_width_tiles + tx] = 0;
+                void_tiles++;
+            }
+        }
+    }
+
+    global_logger_tagged().log(
+        "KantoMapDetector: " + std::to_string(void_tiles) + " of " +
+            std::to_string((size_t)m_width_tiles * m_height_tiles) +
+            " map tiles are unrendered (stitching voids). Viewports overlapping "
+            "them score lower and are compensated for.",
+        COLOR_BLUE
+    );
+}
+
+bool KantoMapDetector::tile_rendered(int tile_x, int tile_y) const{
+    if (tile_x < 0 || tile_y < 0 || tile_x >= m_width_tiles || tile_y >= m_height_tiles){
+        //  Off the edge of the image entirely: no template content there either.
+        return false;
+    }
+    if (m_rendered.empty()){
+        return true;
+    }
+    return m_rendered[(size_t)tile_y * m_width_tiles + tile_x] != 0;
+}
+
+double KantoMapDetector::viewport_void_fraction(int tile_x, int tile_y) const{
+    const int x0 = tile_x - PLAYER_TILE_COL;
+    const int y0 = tile_y - PLAYER_TILE_ROW;
+    int missing = 0;
+    for (int dy = 0; dy < VIEWPORT_H_TILES; dy++){
+        for (int dx = 0; dx < VIEWPORT_W_TILES; dx++){
+            if (!tile_rendered(x0 + dx, y0 + dy)){
+                missing++;
+            }
+        }
+    }
+    return (double)missing / (VIEWPORT_W_TILES * VIEWPORT_H_TILES);
 }
 
 std::optional<KantoPosition> KantoMapDetector::locate(
