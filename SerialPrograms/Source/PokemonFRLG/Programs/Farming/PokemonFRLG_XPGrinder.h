@@ -64,6 +64,7 @@ private:
     BooleanCheckBoxOption IGNORE_SHINIES;
 
     EnumDropdownOption<GrindLocationId> GRIND_LOCATION;
+    BooleanCheckBoxOption NAVIGATE_TO_GRIND_ON_START;
     BooleanCheckBoxOption AUTO_HEAL_LOCATION;
     EnumDropdownOption<HealLocationId> HEAL_LOCATION;
 

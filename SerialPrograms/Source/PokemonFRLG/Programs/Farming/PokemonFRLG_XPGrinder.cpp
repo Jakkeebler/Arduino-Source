@@ -96,6 +96,16 @@ XPGrinder::XPGrinder()
         LockMode::LOCK_WHILE_RUNNING,
         GrindLocationId::Route1NorthGrass
     )
+    , NAVIGATE_TO_GRIND_ON_START(
+        "<b>Walk to the grind spot when the program starts:</b><br>"
+        "Route to the Grind Location above before the first encounter, instead of assuming you "
+        "are already standing in the grass. Uses the same map-driven navigation as the post-heal "
+        "walk back, so it only works from somewhere on the mapped area (Viridian City and "
+        "Route 1). Turn this off if you always start in position and would rather not pay for "
+        "the initial localize.",
+        LockMode::LOCK_WHILE_RUNNING,
+        true
+    )
     , AUTO_HEAL_LOCATION(
         "<b>Heal at the Pokémon Center nearest the grind spot</b><br>"
         "Ignores the Heal Location dropdown below and uses the Center that goes with the grind spot you picked. "
@@ -244,6 +254,7 @@ XPGrinder::XPGrinder()
     PA_ADD_OPTION(PREVENT_EVOLUTION);
     PA_ADD_OPTION(IGNORE_SHINIES);
     PA_ADD_OPTION(GRIND_LOCATION);
+    PA_ADD_OPTION(NAVIGATE_TO_GRIND_ON_START);
     PA_ADD_OPTION(AUTO_HEAL_LOCATION);
     PA_ADD_OPTION(HEAL_LOCATION);
     PA_ADD_OPTION(ROTATION_MODE);
@@ -335,6 +346,56 @@ void whiteout_settle(
     context.wait_for_all_requests();
 }
 
+//  How many encounters between drift checks.
+//
+//  Measured drift is about 0.007 tiles per encounter (nine tiles over ~1,260 on
+//  2026-08-19), so 25 encounters is roughly a fifth of a tile -- comfortably
+//  inside the navigator's 4-tile hint radius, which is what keeps the check
+//  itself cheap. Deliberately not a user option: there is no value a user could
+//  usefully choose here, and getting it wrong silently breaks long runs.
+constexpr int BATTLES_PER_DRIFT_CHECK = 25;
+
+//  Wait until the overworld is actually visible again after a battle.
+//
+//  This used to be a bare BlackScreenOverWatcher, which cannot answer the
+//  question being asked. That watcher only fires once it has *seen* black and
+//  then seen the black end (BlackScreenDetector.h: `m_has_been_black`).
+//  exit_wild_battle normally returns after the battle-end fade is already over,
+//  so the watcher never observes black, never fires, and every single battle
+//  paid the full 5 s timeout before logging "not detected ... proceeding
+//  anyway" -- having confirmed nothing at all. The one case the wait existed to
+//  prevent, a screen still mid-fade, was proceeded through regardless.
+//
+//  Ask the question we actually care about instead: is the screen non-black,
+//  and has it stayed non-black? Two consecutive clear frames rule out latching
+//  onto a single bright frame partway through a fade. Returns false on timeout.
+bool wait_for_overworld_after_battle(
+    SingleSwitchProgramEnvironment& env,
+    ProControllerContext& context,
+    int timeout_ms = 5000
+){
+    constexpr int POLL_MS = 200;
+    constexpr int REQUIRED_CLEAR_FRAMES = 2;
+
+    BlackScreenDetector black(COLOR_RED);
+    int consecutive_clear = 0;
+    const int max_polls = timeout_ms / POLL_MS;
+    for (int i = 0; i < max_polls; i++){
+        context.wait_for_all_requests();
+        VideoSnapshot snap = env.console.video().snapshot();
+        if (snap && !black.detect(*snap.frame)){
+            consecutive_clear++;
+            if (consecutive_clear >= REQUIRED_CLEAR_FRAMES){
+                return true;
+            }
+        }else{
+            consecutive_clear = 0;
+        }
+        context.wait_for(std::chrono::milliseconds(POLL_MS));
+    }
+    return false;
+}
+
 //  `on_healed` fires the moment the party is actually restored -- i.e. after the
 //  whiteout warp, BEFORE the walk back to the grind spot. If the walk throws, the
 //  caller's health bookkeeping has still been updated to match reality; the old
@@ -377,7 +438,15 @@ void routine_heal_trip(
         use_teleport_from_overworld(env.console, context);
         break;
     case XPGrinder::TravelMethod::walk:
-        kanto_navigate_to(env, context, pc_entrance_for_heal_location(heal_location));
+        //  We have been spinning on the grind tile for the last N battles, so
+        //  that is where we are. Seeding it keeps the first fix out of the
+        //  ambiguity gate -- a cold match in the middle of a uniform grass field
+        //  fails every time (observed 8/18: 16 straight "Position unknown").
+        kanto_navigate_to(
+            env, context,
+            pc_entrance_for_heal_location(heal_location),
+            goal_for_grind_location(grind_location)
+        );
         break;
     }
     env.log("Heal trip phase 2: entering PC, healing party, leaving PC.", COLOR_BLUE);
@@ -388,7 +457,13 @@ void routine_heal_trip(
     }
     leave_pokecenter(env.console, context);
     env.log("Heal trip phase 3: walking back to grind location via map navigation.", COLOR_BLUE);
-    kanto_navigate_to(env, context, goal_for_grind_location(grind_location));
+    //  leave_pokecenter() has just put us on the Center's doorway, one tile north
+    //  of its entrance goal -- seed that rather than paying for a cold fix.
+    kanto_navigate_to(
+        env, context,
+        goal_for_grind_location(grind_location),
+        pc_entrance_for_heal_location(heal_location)
+    );
     env.log("Heal trip complete. Resuming grinding.", COLOR_BLUE);
 }
 
@@ -787,8 +862,76 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         return;
     }
 
+    //  Start-of-run navigation.
+    //
+    //  Every other kanto_navigate_to() call in this program recovers a *known*
+    //  situation -- after a heal trip, after a whiteout, after an error. The
+    //  first encounter, though, simply assumed the player was already standing
+    //  in the grass. Starting anywhere else meant grass_spin() spun on dry land
+    //  until the failed-encounter guard killed the run, with nothing in the log
+    //  to say why.
+    if (NAVIGATE_TO_GRIND_ON_START){
+        env.log("Navigating to the grind location before the first encounter.", COLOR_BLUE);
+        try{
+            kanto_navigate_to(env, context, goal_for_grind_location(grind_location));
+        }catch (const OperationFailedException& e){
+            //  Re-fire with the one piece of context the navigator cannot know:
+            //  which option to turn off, and what counts as a valid start.
+            OperationFailedException::fire(
+                ErrorReport::SEND_ERROR_REPORT,
+                "Could not walk to the grind spot at startup: " + e.message() +
+                    "  Start the program somewhere in Viridian City or on Route 1, or turn off "
+                    "\"Walk to the grind spot when the program starts\" and begin standing in "
+                    "the grass.",
+                env.console
+            );
+        }
+    }
+
+    int battles_since_drift_check = 0;
+
     while (!stop_program && (MAX_BATTLES == 0 || stats.battles_won.load() < MAX_BATTLES)){
         try{
+            //  Periodic drift correction.
+            //
+            //  grass_spin() moves the player around to trigger encounters and
+            //  nothing pulls them back, so over a long run they migrate. On
+            //  2026-08-19 the character finished ~1,260 encounters nine tiles
+            //  north and three east of the grind tile -- far outside the
+            //  navigator's hint radius, and hard against the boundary trees where
+            //  the map's border void made localization worst. Both failure modes
+            //  are fixed now; the drift that walked into them is not.
+            //
+            //  Re-navigating to the grind goal IS the check. If we are already
+            //  there, kanto_navigate_to() localizes once and returns on the first
+            //  poll, so the common case costs one hinted match. Seeding the goal
+            //  also makes the navigator's own "N tile(s) from the seeded hint"
+            //  line report the measured drift for free -- no extra plumbing, and
+            //  it turns drift into something visible in the log rather than
+            //  something we only learn about when a run dies.
+            //
+            //  Deliberately best-effort: a routine drift check must not spend the
+            //  run's recoverable-failure budget. If it fails we log and carry on;
+            //  the next heal trip runs the same navigation with full handling.
+            if (++battles_since_drift_check >= BATTLES_PER_DRIFT_CHECK){
+                battles_since_drift_check = 0;
+                const KantoGoal grind_goal = goal_for_grind_location(grind_location);
+                env.log(
+                    "Drift check (every " + std::to_string(BATTLES_PER_DRIFT_CHECK) +
+                        " encounters): re-centring on the grind spot.",
+                    COLOR_BLUE
+                );
+                try{
+                    kanto_navigate_to(env, context, grind_goal, grind_goal);
+                }catch (const OperationFailedException& e){
+                    env.log(
+                        std::string("Drift check could not complete (continuing anyway): ") +
+                            e.message(),
+                        COLOR_RED
+                    );
+                }
+            }
+
             if (failed_encounters >= 5){
                 OperationFailedException::fire(
                     ErrorReport::SEND_ERROR_REPORT,
@@ -903,22 +1046,28 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         break;
                     }
 
-                    //  exit_wild_battle returns on the battle-end black fade (currently
-                    //  black). Wait for the overworld fade-in to complete before any
-                    //  subsequent menu navigation; pressing START while the screen is
-                    //  still mid-fade can drop inputs and corrupt the post-battle
+                    //  Confirm the overworld is up before any subsequent menu
+                    //  navigation: pressing START while the screen is still
+                    //  mid-fade drops inputs and corrupts the post-battle
                     //  switch_party_lead_overworld call below.
+                    //
+                    //  Note exit_wild_battle does NOT reliably return while the
+                    //  screen is still black -- it usually returns after the fade
+                    //  has finished. Assuming otherwise is what made the old
+                    //  BlackScreenOverWatcher here useless.
                     {
-                        BlackScreenOverWatcher overworld_entered(COLOR_RED);
-                        int over = wait_until(
-                            env.console, context,
-                            std::chrono::seconds(5),
-                            { overworld_entered }
-                        );
-                        if (over < 0){
-                            env.log("Overworld fade-in not detected within 5s after battle exit. Proceeding anyway.", COLOR_BLUE);
-                        }else{
+                        if (wait_for_overworld_after_battle(env, context)){
                             env.log("Overworld visible after battle exit.", COLOR_BLUE);
+                        }else{
+                            //  Now a real signal rather than the every-battle noise
+                            //  the old BlackScreenOverWatcher produced: the screen
+                            //  genuinely never went clear. Something is still on it.
+                            env.log(
+                                "Overworld still not visible 5s after battle exit -- the screen "
+                                "never went clear. Proceeding anyway.",
+                                COLOR_RED
+                            );
+                            stats.errors++;
                         }
                         context.wait_for_all_requests();
                     }
