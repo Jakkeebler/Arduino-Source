@@ -1096,6 +1096,27 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                             "). Fighting with the current lead this battle.",
                         COLOR_RED
                     );
+
+                    //  Mark the slot unusable so the next battle falls forward
+                    //  instead of retrying the same doomed switch forever.
+                    //
+                    //  fainted[] was previously only set by a BattleResult of
+                    //  playerfainted, which misses a fighter that goes down
+                    //  without the program registering it -- Struggle recoil
+                    //  landing on the same turn the opponent faints is the
+                    //  obvious way in. On 8/19 slot 2 stopped being switchable
+                    //  after battle 21 and the program retried it for the next
+                    //  hour, wedging on a menu each time. A refused send-out is
+                    //  itself sufficient evidence that the slot cannot fight,
+                    //  whatever the reason; on_healed() clears it again.
+                    if (fighter_slot >= 1 && fighter_slot <= party.party_size){
+                        party.fainted[fighter_slot - 1] = true;
+                        env.log(
+                            "Switch training: marking slot " + std::to_string(fighter_slot) +
+                                " unusable until the next heal trip.",
+                            COLOR_RED
+                        );
+                    }
                 }
             }
 

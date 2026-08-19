@@ -1607,9 +1607,32 @@ void switch_pokemon_in_battle(ConsoleHandle& console, ProControllerContext& cont
             "switch_pokemon_in_battle(): switch did not take. Backing out to the battle menu.",
             COLOR_RED
         );
-        pbf_mash_button(context, BUTTON_B, 2000ms);
-        context.wait_for_all_requests();
-        int recovered = wait_until(console, context, std::chrono::seconds(10), { battle_menu });
+
+        //  Save the frame we are actually looking at. Every diagnosis of this
+        //  failure so far has been inference from watcher timings, which is how
+        //  the first fix aimed at the wrong step. The screen itself settles it.
+        {
+            VideoSnapshot stuck = console.video().snapshot();
+            if (stuck){
+                const std::string path = "./DebugDumps/switch_stuck_slot" +
+                    std::to_string(game_slot_1indexed) + ".png";
+                if (stuck.frame->save(path)){
+                    console.log("switch_pokemon_in_battle(): saved the stuck frame to " + path, COLOR_BLUE);
+                }
+            }
+        }
+
+        //  One B-mash is not enough to unwind every screen this can land on.
+        //  If the confirm opened SUMMARY rather than performing the switch, we
+        //  are two screens deep (summary -> party -> battle menu), and the
+        //  single 2 s mash + 10 s wait observed on 8/19 left us stranded on the
+        //  party screen with the caller believing the battle was still live.
+        int recovered = -1;
+        for (int attempt = 0; attempt < 3 && recovered < 0; attempt++){
+            pbf_mash_button(context, BUTTON_B, 2000ms);
+            context.wait_for_all_requests();
+            recovered = wait_until(console, context, std::chrono::seconds(5), { battle_menu });
+        }
         if (recovered < 0){
             OperationFailedException::fire(
                 ErrorReport::SEND_ERROR_REPORT,
