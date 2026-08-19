@@ -1593,9 +1593,37 @@ void switch_pokemon_in_battle(ConsoleHandle& console, ProControllerContext& cont
     context.wait_for_all_requests();
     ret = wait_until(console, context, std::chrono::seconds(20), { battle_menu });
     if (ret < 0){
+        //  The switch did not take. The dominant cause is a target that cannot
+        //  be sent out: a fainted Pokemon answers "There's no will to fight!"
+        //  and drops straight back to the party screen, so nothing advances and
+        //  we sit in a menu until the caller gives up. Observed 8/19 13:07, once
+        //  the party had been reordered underneath us and slot 2 held a KO'd
+        //  Pokemon.
+        //
+        //  Back out to the battle menu before reporting. A recovered failure
+        //  costs one battle's worth of shared EXP; an unrecovered one leaves the
+        //  program pressing buttons at a party screen it does not know it is on.
+        console.log(
+            "switch_pokemon_in_battle(): switch did not take. Backing out to the battle menu.",
+            COLOR_RED
+        );
+        pbf_mash_button(context, BUTTON_B, 2000ms);
+        context.wait_for_all_requests();
+        int recovered = wait_until(console, context, std::chrono::seconds(10), { battle_menu });
+        if (recovered < 0){
+            OperationFailedException::fire(
+                ErrorReport::SEND_ERROR_REPORT,
+                "switch_pokemon_in_battle(): Battle menu did not return after the switch, "
+                "and backing out did not recover it either.",
+                console
+            );
+        }
+        //  NO_ERROR_REPORT: recovered cleanly and the caller handles this by
+        //  fighting with whoever is already out, so it is not worth a report.
         OperationFailedException::fire(
-            ErrorReport::SEND_ERROR_REPORT,
-            "switch_pokemon_in_battle(): Battle menu did not return after the switch.",
+            ErrorReport::NO_ERROR_REPORT,
+            "switch_pokemon_in_battle(): Slot " + std::to_string(game_slot_1indexed) +
+                " could not be sent out (most likely fainted). Recovered to the battle menu.",
             console
         );
     }

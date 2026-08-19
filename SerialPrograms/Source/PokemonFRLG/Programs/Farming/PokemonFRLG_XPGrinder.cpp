@@ -711,6 +711,20 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
 
     const bool multi_party = rotation_enabled && (party_size > 1);
 
+    //  Switch training depends on a party order that never moves: the trainee
+    //  stays in slot 1 so the game always leads with it, and the fighter is
+    //  pulled in with an in-battle switch, which does not reorder the party.
+    //
+    //  The post-battle "normalize the winner into slot 1" step exists for the
+    //  forced-switch modes, where the winner really is stranded in its original
+    //  slot. Under switch training it is actively destructive: it physically
+    //  swapped the fighter into slot 1 after every battle, so the trainee walked
+    //  down the party one slot at a time and FIGHTER_SLOT ended up pointing at a
+    //  fainted Pokemon. Observed 8/19: normalize at 13:05:00 and 13:07:06, then
+    //  the 13:07:30 switch hung on a KO'd slot 2.
+    const bool normalize_party_after_battle =
+        multi_party && ROTATION_MODE != RotationMode::switch_training;
+
     env.log(
         "Config: MAX_BATTLES=" + std::to_string((uint64_t)MAX_BATTLES) +
         "; PREVENT_EVOLUTION=" + bool_str(PREVENT_EVOLUTION) +
@@ -1024,7 +1038,51 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
             //  reorder the party, so the next encounter starts with the trainee
             //  in front again and we repeat.
             if (ROTATION_MODE == RotationMode::switch_training){
-                const int fighter_slot = (int)(uint64_t)FIGHTER_SLOT;
+                //  Party order is never touched in this mode, so rotation index i
+                //  is always game slot i+1 and we can reason in raw slots.
+                int fighter_slot = (int)(uint64_t)FIGHTER_SLOT;
+                if (fighter_slot > party.party_size || party.fainted[fighter_slot - 1]){
+                    //  The configured fighter is down. Fall forward to the next
+                    //  healthy Pokemon that is not the trainee rather than trying
+                    //  to send out a KO'd one -- that is what wedged the party
+                    //  screen on 8/19.
+                    int replacement = -1;
+                    for (int slot = 2; slot <= party.party_size; slot++){
+                        if (!party.fainted[slot - 1]){
+                            replacement = slot;
+                            break;
+                        }
+                    }
+                    if (replacement > 0){
+                        env.log(
+                            "Switch training: slot " + std::to_string(fighter_slot) +
+                                " is down. Fighting with slot " + std::to_string(replacement) +
+                                " instead.",
+                            COLOR_BLUE
+                        );
+                    }
+                    fighter_slot = replacement;
+                }
+
+                if (fighter_slot < 2){
+                    //  Every fighter is fainted and only the trainee is left. A
+                    //  level 5 Magikarp cannot win this battle -- it can only lose
+                    //  it -- so run and heal instead of feeding it to the grass.
+                    env.log(
+                        "Switch training: no healthy fighter left in the party. Fleeing and taking a heal trip.",
+                        COLOR_RED
+                    );
+                    flee_battle(env.console, context);
+                    routine_heal_trip(
+                        env, context, TRAVEL_METHOD, grind_location, heal_location,
+                        [&]{ party.on_healed(); }
+                    );
+                    stats.healing_trips++;
+                    failed_encounters = 0;
+                    env.update_stats();
+                    continue;
+                }
+
                 try{
                     switch_pokemon_in_battle(env.console, context, fighter_slot);
                     party.current_rotation = std::min(fighter_slot - 1, party.party_size - 1);
@@ -1242,7 +1300,7 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
 
                     //  After a forced switch the winner is still in their original slot, not
                     //  slot 1.  Swap them into slot 1 now so the next encounter starts cleanly.
-                    if (multi_party && party.game_slot[party.current_rotation] != 1){
+                    if (normalize_party_after_battle && party.game_slot[party.current_rotation] != 1){
                         int winner_slot = party.game_slot[party.current_rotation];
                         env.log("Post-battle normalize: swapping game slot " + std::to_string(winner_slot) + " into slot 1.", COLOR_BLUE);
                         //  Try once; on transient failure (most common cause is the
