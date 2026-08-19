@@ -566,6 +566,28 @@ struct PartyState{
         return true;
     }
 
+    //  Switch training only.
+    //
+    //  Slot 1 is the trainee and is never a fighter: it is sent out for the EXP
+    //  share and withdrawn before the opponent moves. These two ask about the
+    //  rest of the party -- the Pokemon that are actually expected to win.
+    //
+    //  Party order is never touched in switch_training (see
+    //  normalize_party_after_battle), so rotation index i is always game slot
+    //  i+1 and indices 1..party_size-1 are exactly the fighters.
+    //
+    //  Returns the first alive fighter's rotation index, or -1 when every
+    //  fighter is down and only the trainee is left standing.
+    int next_alive_fighter() const{
+        for (int i = 1; i < party_size; i++){
+            if (!fainted[i]) return i;
+        }
+        return -1;
+    }
+    bool only_trainee_left() const{
+        return next_alive_fighter() < 0;
+    }
+
     //  True when every slot needs healing (all fainted, or all PP-exhausted in pp_exhaustion mode).
     bool all_need_heal(bool pp_mode) const{
         if (all_fainted()) return true;
@@ -1046,13 +1068,10 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                     //  healthy Pokemon that is not the trainee rather than trying
                     //  to send out a KO'd one -- that is what wedged the party
                     //  screen on 8/19.
-                    int replacement = -1;
-                    for (int slot = 2; slot <= party.party_size; slot++){
-                        if (!party.fainted[slot - 1]){
-                            replacement = slot;
-                            break;
-                        }
-                    }
+                    const int replacement_rotation = party.next_alive_fighter();
+                    const int replacement = replacement_rotation < 0
+                        ? -1
+                        : replacement_rotation + 1;
                     if (replacement > 0){
                         env.log(
                             "Switch training: slot " + std::to_string(fighter_slot) +
@@ -1375,8 +1394,51 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                     party.fainted[party.current_rotation] = true;
                     env.update_stats();
 
+                    //  Switch training: the last fighter just went down and the
+                    //  only Pokemon left is the trainee. The game does not offer
+                    //  a choice here -- something has to come out -- so send the
+                    //  trainee, then run before it takes a turn, and heal.
+                    //
+                    //  Without this, next_alive() wraps around to rotation 0 and
+                    //  hands a level 5 Magikarp a battle it cannot win, and the
+                    //  program keeps doing that until the whiteout.
+                    if (ROTATION_MODE == RotationMode::switch_training &&
+                        multi_party && party.only_trainee_left() && !party.fainted[0]
+                    ){
+                        env.log(
+                            "Switch training: last fighter is down and only the trainee is left. "
+                            "Sending it out, fleeing, then healing.",
+                            COLOR_RED
+                        );
+                        select_forced_switch_slot(env.console, context, party.game_slot[0]);
+                        party.current_rotation = 0;
+                        try{
+                            flee_battle(env.console, context);
+                        }catch (const OperationFailedException& e){
+                            //  Escape can fail; the trainee is now exposed, so let
+                            //  the outer handler recover rather than pressing on.
+                            env.log(
+                                std::string("Switch training: could not flee with the trainee out: ") +
+                                    e.message(),
+                                COLOR_RED
+                            );
+                            throw;
+                        }
+                        routine_heal_trip(
+                            env, context, TRAVEL_METHOD, grind_location, heal_location,
+                            [&]{ party.on_healed(); }
+                        );
+                        stats.healing_trips++;
+                        failed_encounters = 0;
+                        env.update_stats();
+                        battle_ongoing = false;
+                        break;
+                    }
+
                     int next_after_faint = multi_party && !party.all_fainted()
-                        ? party.next_alive()
+                        ? (ROTATION_MODE == RotationMode::switch_training
+                            ? party.next_alive_fighter()
+                            : party.next_alive())
                         : -1;
                     if (next_after_faint >= 0){
                         //  Alive allies remain — use the forced-switch screen.
