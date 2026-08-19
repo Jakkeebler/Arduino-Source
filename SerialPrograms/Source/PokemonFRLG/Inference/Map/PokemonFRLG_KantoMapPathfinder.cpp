@@ -6,7 +6,9 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <mutex>
 #include <queue>
+#include <set>
 #include <unordered_map>
 #include <vector>
 #include "PokemonFRLG_KantoMapMasks_Generated.h"
@@ -88,10 +90,51 @@ constexpr MaskOverride MASK_OVERRIDES[] = {
     //  real geometry is what makes the entry checkable later.
     {66, 215, 69, 221, false},
     {74, 215, 82, 221, false},
+
+    //  --- Route 22 mountain, east block -----------------------------------
+    //  The mountain immediately south of the Route 22 sand path. Verified
+    //  against the map image: solid rock occupies x=46..54, y=200..208, with
+    //  the walkable sand corridor running down x=42..45 to its west.
+    //
+    //  The generator marked only a scattering of the rock's edge tiles and left
+    //  the entire interior walkable, which handed A* a phantom route straight
+    //  through the mountain that happened to tie the real route on length. On
+    //  2026-08-19 the tie broke toward the phantom: the player walked correctly
+    //  from Viridian to (52,199), then pressed south into the rock face eight
+    //  times and the run died before the first encounter.
+    {46, 200, 54, 208, false},
 };
+
+//  Runtime-learned obstacles.
+//
+//  The generated mask has systematic defects -- mountain interiors marked
+//  walkable, tree columns blocked only on alternating rows -- and hand-patching
+//  each one as it is discovered does not scale to a 408x400 map that is only
+//  partly explored. When the navigator proves the player cannot walk into a
+//  tile, it records that here and A* routes around it for the rest of the
+//  session. Empirical evidence outranks both tables, so this is checked first.
+//
+//  Deliberately process-lifetime and not persisted: a wrong entry (an NPC that
+//  happened to be standing there) costs one slightly longer route and is gone
+//  on the next launch, whereas a persisted wrong entry would be a permanent
+//  hole in the map with no obvious cause.
+std::mutex g_learned_lock;
+std::set<uint32_t> g_learned_blocked;
+
+inline uint32_t key(int x, int y){
+    return (uint32_t)(x & 0xFFFF) | ((uint32_t)(y & 0xFFFF) << 16);
+}
+
+bool learned_blocked(int x, int y){
+    std::lock_guard<std::mutex> lg(g_learned_lock);
+    return g_learned_blocked.find(key(x, y)) != g_learned_blocked.end();
+}
 
 bool walkable(int x, int y){
     if (x < 0 || y < 0 || x >= KANTO_MASK_COLS || y >= KANTO_MASK_ROWS){
+        return false;
+    }
+    if (learned_blocked(x, y)){
         return false;
     }
     for (const MaskOverride& o : MASK_OVERRIDES){
@@ -102,11 +145,21 @@ bool walkable(int x, int y){
     return KANTO_MASK[y][x] == WALKABLE_CODE;
 }
 
-inline uint32_t key(int x, int y){
-    return (uint32_t)(x & 0xFFFF) | ((uint32_t)(y & 0xFFFF) << 16);
-}
-
 }  // namespace
+
+
+void kanto_mark_tile_blocked(int tile_x, int tile_y){
+    std::lock_guard<std::mutex> lg(g_learned_lock);
+    g_learned_blocked.insert(key(tile_x, tile_y));
+}
+void kanto_clear_learned_blocks(){
+    std::lock_guard<std::mutex> lg(g_learned_lock);
+    g_learned_blocked.clear();
+}
+size_t kanto_learned_block_count(){
+    std::lock_guard<std::mutex> lg(g_learned_lock);
+    return g_learned_blocked.size();
+}
 
 
 bool kanto_tile_walkable(int tile_x, int tile_y){

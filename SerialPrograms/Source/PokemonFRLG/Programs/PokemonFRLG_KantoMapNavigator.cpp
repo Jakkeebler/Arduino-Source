@@ -93,6 +93,19 @@ constexpr int MAX_ASTAR_FAILURES_BEFORE_GREEDY = 2;
 //  somewhere the map cannot describe.
 constexpr int MAX_BLOCKED_START_ESCAPES = 4;
 
+//  Consecutive no-progress polls before we conclude the tile ahead is genuinely
+//  not walkable and record it. Well under MAX_NO_PROGRESS on purpose: the point
+//  is to re-route while there is still budget left to walk the alternative.
+//  Three presses is already past any plausible dropped input.
+constexpr int NO_PROGRESS_BEFORE_LEARNING = 3;
+
+//  Cap on obstacles one navigation may learn. A handful means the mask is wrong
+//  about a wall or two and routing around them is right. Many more means we are
+//  either mis-localized or somewhere the map describes wholesale incorrectly,
+//  and blacklisting our way across it would carve real holes in the map for the
+//  rest of the session -- better to fail and say so.
+constexpr int MAX_LEARNED_BLOCKS_PER_NAVIGATION = 8;
+
 Step kanto_step_to_joystick(KantoStep ks){
     switch (ks){
     case KantoStep::North: return STEP_NORTH;
@@ -144,6 +157,7 @@ static void kanto_navigate_impl(
     int flees = 0;
     int unknown_polls = 0;
     int no_progress_count = 0;
+    int learned_blocks = 0;
     bool have_prev_pos = false;
     int prev_x = -999, prev_y = -999;
     Step last_step = STEP_NORTH;
@@ -489,6 +503,49 @@ static void kanto_navigate_impl(
             prev_step_interrupted = false;
         }else if (didnt_move){
             no_progress_count++;
+
+            //  Learn the obstacle rather than dying on it.
+            //
+            //  Pressing into the same tile several times without moving is
+            //  proof that tile is not walkable, whatever the mask claims. Record
+            //  it and let A* re-plan: the alternative route is usually only a
+            //  few tiles longer, and the run continues.
+            //
+            //  This is what the two hand-written mask overrides above would have
+            //  been if the program could write them itself. It matters because
+            //  the generated mask's defects are systematic -- mountain interiors
+            //  marked walkable, tree columns blocked on alternating rows -- and
+            //  we only find them one dead run at a time.
+            if (no_progress_count >= NO_PROGRESS_BEFORE_LEARNING){
+                //  jy is joystick-up-positive; tile rows increase southward.
+                const int blocked_x = pos->tile_x + (int)last_step.jx;
+                const int blocked_y = pos->tile_y - (int)last_step.jy;
+                const bool is_goal = blocked_x == goal.tile_x && blocked_y == goal.tile_y;
+                if (is_goal){
+                    //  Never blacklist the destination -- that turns a reachable
+                    //  goal into a permanently unplannable one.
+                    env.log(
+                        "Cannot enter the goal tile itself. Not blacklisting it.",
+                        COLOR_RED
+                    );
+                }else if (learned_blocks < MAX_LEARNED_BLOCKS_PER_NAVIGATION){
+                    kanto_mark_tile_blocked(blocked_x, blocked_y);
+                    learned_blocks++;
+                    env.log(
+                        "Blocked going " + std::string(last_step.name) + " from (" +
+                            std::to_string(pos->tile_x) + "," + std::to_string(pos->tile_y) +
+                            "). Marking (" + std::to_string(blocked_x) + "," +
+                            std::to_string(blocked_y) + ") unwalkable and re-routing. " +
+                            std::to_string(learned_blocks) + "/" +
+                            std::to_string(MAX_LEARNED_BLOCKS_PER_NAVIGATION) +
+                            " this trip, " + std::to_string(kanto_learned_block_count()) +
+                            " this session.",
+                        COLOR_BLUE
+                    );
+                    no_progress_count = 0;
+                }
+            }
+
             if (no_progress_count >= MAX_NO_PROGRESS){
                 OperationFailedException::fire(
                     ErrorReport::SEND_ERROR_REPORT,
@@ -496,7 +553,9 @@ static void kanto_navigate_impl(
                     std::to_string(MAX_NO_PROGRESS) + " steps at tile (" +
                     std::to_string(pos->tile_x) + ", " +
                     std::to_string(pos->tile_y) + "). Walkable mask may be "
-                    "wrong here, or NPC blocking.",
+                    "wrong here, or NPC blocking. Learned " +
+                    std::to_string(learned_blocks) + " obstacle(s) on this trip "
+                    "without finding a way through.",
                     env.console
                 );
             }

@@ -34,6 +34,17 @@ std::optional<KantoStep> kanto_pathfind_next_step(
 
 bool kanto_tile_walkable(int tile_x, int tile_y);
 
+//  Runtime obstacle learning.
+//
+//  The generated walkable mask has systematic defects. Rather than requiring a
+//  hand-written override for every one, the navigator calls
+//  kanto_mark_tile_blocked() when it has proved the player cannot walk into a
+//  tile, and A* routes around it for the rest of the process's life.
+//  Process-lifetime only -- nothing is persisted to disk.
+void kanto_mark_tile_blocked(int tile_x, int tile_y);
+void kanto_clear_learned_blocks();
+size_t kanto_learned_block_count();
+
 }
 }
 }
