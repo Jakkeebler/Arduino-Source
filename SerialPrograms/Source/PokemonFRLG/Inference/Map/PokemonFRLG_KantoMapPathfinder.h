@@ -32,6 +32,17 @@ std::optional<KantoStep> kanto_pathfind_next_step(
     int goal_tile_x,  int goal_tile_y
 );
 
+//  Like kanto_pathfind_next_step(), but also reports how many steps at the head
+//  of the route share that direction, capped at max_run. The navigator uses this
+//  to walk a whole straight segment on one held stick input instead of taking a
+//  position fix after every single tile.
+std::optional<KantoStep> kanto_pathfind_next_run(
+    int start_tile_x, int start_tile_y,
+    int goal_tile_x,  int goal_tile_y,
+    int max_run,
+    int* run_length
+);
+
 bool kanto_tile_walkable(int tile_x, int tile_y);
 
 //  Runtime obstacle learning.

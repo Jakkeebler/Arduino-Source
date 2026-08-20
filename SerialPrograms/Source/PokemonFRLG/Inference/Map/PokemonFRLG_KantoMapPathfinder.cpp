@@ -4,6 +4,7 @@
  *
  */
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <mutex>
@@ -167,15 +168,23 @@ bool kanto_tile_walkable(int tile_x, int tile_y){
 }
 
 
-std::optional<KantoStep> kanto_pathfind_next_step(
+namespace{
+
+//  The full route as a step list, empty when there is none.
+//
+//  Both public entry points go through this. The navigator needs more than the
+//  first step: it walks several tiles between position fixes, and to do that it
+//  has to know how far the route continues in one direction.
+std::vector<KantoStep> pathfind_route(
     int start_x, int start_y,
     int goal_x,  int goal_y
 ){
+    std::vector<KantoStep> route;
     if (start_x == goal_x && start_y == goal_y){
-        return std::nullopt;
+        return route;
     }
     if (!walkable(start_x, start_y)){
-        return std::nullopt;
+        return route;
     }
 
     struct Node{
@@ -237,21 +246,56 @@ std::optional<KantoStep> kanto_pathfind_next_step(
         }
     }
 
-    if (!found) return std::nullopt;
+    if (!found) return route;
 
+    //  Walk the parent chain back from the goal, then reverse.
     int cx = goal_x, cy = goal_y;
-    KantoStep first_step = KantoStep::North;
-    while (true){
+    while (!(cx == start_x && cy == start_y)){
         auto it = came_from.find(key(cx, cy));
-        if (it == came_from.end()) return std::nullopt;
-        if (it->second.px == start_x && it->second.py == start_y){
-            first_step = it->second.step;
-            break;
+        if (it == came_from.end()){
+            route.clear();
+            return route;
         }
+        route.push_back(it->second.step);
         cx = it->second.px;
         cy = it->second.py;
     }
-    return first_step;
+    std::reverse(route.begin(), route.end());
+    return route;
+}
+
+}  // namespace
+
+
+std::optional<KantoStep> kanto_pathfind_next_step(
+    int start_x, int start_y,
+    int goal_x,  int goal_y
+){
+    std::vector<KantoStep> route = pathfind_route(start_x, start_y, goal_x, goal_y);
+    if (route.empty()){
+        return std::nullopt;
+    }
+    return route.front();
+}
+
+std::optional<KantoStep> kanto_pathfind_next_run(
+    int start_x, int start_y,
+    int goal_x,  int goal_y,
+    int max_run,
+    int* run_length
+){
+    if (run_length) *run_length = 0;
+    std::vector<KantoStep> route = pathfind_route(start_x, start_y, goal_x, goal_y);
+    if (route.empty()){
+        return std::nullopt;
+    }
+    const KantoStep first = route.front();
+    int n = 1;
+    while (n < (int)route.size() && n < max_run && route[(size_t)n] == first){
+        n++;
+    }
+    if (run_length) *run_length = n;
+    return first;
 }
 
 

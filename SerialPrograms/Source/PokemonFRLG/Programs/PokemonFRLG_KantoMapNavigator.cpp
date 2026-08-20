@@ -106,6 +106,36 @@ constexpr int NO_PROGRESS_BEFORE_LEARNING = 3;
 //  rest of the session -- better to fail and say so.
 constexpr int MAX_LEARNED_BLOCKS_PER_NAVIGATION = 8;
 
+//  ---- Burst walking -----------------------------------------------------
+//
+//  Taking a position fix after every single tile cost ~515 ms per tile, of
+//  which only ~20 ms was the template match: the rest was a 230 ms stick press
+//  and a 260 ms settle, paid once per tile. Routes are mostly long straight
+//  segments, so instead we hold the stick down for a whole segment and fix our
+//  position once at the end of it.
+//
+//  Gen 3 walks one tile per 16 frames (~267 ms) and runs one per 8 (~133 ms).
+//  Holding B runs when the player has the Running Shoes and is harmless when
+//  they do not -- B does nothing else in the overworld.
+constexpr int RUN_TILE_MS = 138;
+
+//  Pressing a direction the player is not already facing spends a few frames
+//  turning on the spot before they move. Pay it once per burst, not per tile.
+constexpr int TURN_ALLOWANCE_MS = 100;
+
+//  Tiles per burst. Bounded by localization, not by movement: the position fix
+//  afterwards has to search a window big enough to contain both "walked the
+//  whole way" and "stopped immediately", and that window grows with the burst.
+//  Eight keeps it to ~16x16 tiles, well inside the range where the terrain is
+//  distinctive enough to match, while still amortizing the settle 8 ways.
+constexpr int MAX_BURST_TILES = 8;
+
+//  After anything unexpected -- an encounter, a rejected fix, a tile we could
+//  not enter -- drop back to single steps until a clean fix comes in. This is
+//  what keeps grass safe: encounters interrupt a burst, and the next few tiles
+//  are then taken one at a time with a fix after each.
+constexpr int CAUTIOUS_BURST_TILES = 1;
+
 Step kanto_step_to_joystick(KantoStep ks){
     switch (ks){
     case KantoStep::North: return STEP_NORTH;
@@ -158,6 +188,17 @@ static void kanto_navigate_impl(
     int unknown_polls = 0;
     int no_progress_count = 0;
     int learned_blocks = 0;
+
+    //  Burst state. hint_x/hint_y is where we expect to be at the next poll --
+    //  the midpoint of the burst we just issued, so the search window covers
+    //  both ends of it. tiles_in_flight is how far the player may legitimately
+    //  have travelled since the last confirmed fix, which is what the motion
+    //  gate has to allow for.
+    int hint_x = -999, hint_y = -999;
+    int hint_radius = HINT_RADIUS_TILES;
+    int tiles_in_flight = 1;
+    int burst_cap = MAX_BURST_TILES;
+
     bool have_prev_pos = false;
     int prev_x = -999, prev_y = -999;
     Step last_step = STEP_NORTH;
@@ -312,23 +353,36 @@ static void kanto_navigate_impl(
             }
         }
 
+        //  Search around where the burst should have put us, not around where it
+        //  started. For a single step the two are the same tile.
+        const int search_x = (hint_x == -999) ? prev_x : hint_x;
+        const int search_y = (hint_y == -999) ? prev_y : hint_y;
+
         std::optional<KantoPosition> pos = snap
             ? (have_prev_pos
-                ? detector.locate(*snap.frame, hinted_min_conf, prev_x, prev_y, HINT_RADIUS_TILES)
+                ? detector.locate(*snap.frame, hinted_min_conf, search_x, search_y, hint_radius)
                 : detector.locate(*snap.frame, MIN_CONFIDENCE))
             : std::nullopt;
 
-        //  Motion gate: a detection more than MAX_TILE_JUMP tiles from the last
-        //  confirmed position cannot be real -- we issue at most one step per poll.
-        //  Discard it rather than letting it seed the next poll's hint window,
-        //  which is how a single bad match used to lock navigation onto the wrong
-        //  part of the map permanently.
+        //  Motion gate: a detection further from the last confirmed position than
+        //  the burst could possibly have carried us cannot be real. Discard it
+        //  rather than letting it seed the next poll's hint window, which is how
+        //  a single bad match used to lock navigation onto the wrong part of the
+        //  map permanently.
+        //
+        //  A single step keeps the original tight bound. A burst gets its own
+        //  length plus that bound as slack -- the hold is timed in milliseconds
+        //  against an emulated frame rate, so landing a tile past the intended
+        //  one is normal and must not be mistaken for a bad match.
+        const int max_jump_allowed = tiles_in_flight <= 1
+            ? MAX_TILE_JUMP
+            : MAX_TILE_JUMP + tiles_in_flight;
         if (pos && have_prev_pos && !seeded_hint_unconfirmed){
             int jump = std::max(
                 std::abs(pos->tile_x - prev_x),
                 std::abs(pos->tile_y - prev_y)
             );
-            if (jump > MAX_TILE_JUMP){
+            if (jump > max_jump_allowed){
                 rejected_jumps++;
                 //  Keep the hint for the first few rejections; only go cold once
                 //  the hinted window has repeatedly disagreed with physics, which
@@ -649,12 +703,26 @@ static void kanto_navigate_impl(
             blocked_start_escapes = 0;
         }
 
-        //  A* pathfind to the goal.
+        //  How far to walk before the next position fix.
+        //
+        //  Full speed only from a clean state. Anything that suggests we are not
+        //  where we think we are -- a blocked tile, a rejected fix, an encounter
+        //  that cut the last burst short -- drops back to single steps until a
+        //  clean fix comes in. In practice this is what slows the program down
+        //  in grass, where encounters interrupt bursts, and lets it run flat out
+        //  on roads and routes.
+        const bool confident =
+            no_progress_count == 0 && rejected_jumps == 0 && !prev_step_interrupted;
+        burst_cap = confident ? MAX_BURST_TILES : CAUTIOUS_BURST_TILES;
+
+        //  A* pathfind to the goal, taking the whole first straight segment.
+        int run_len = 1;
         std::optional<KantoStep> next = step_chosen
             ? std::nullopt
-            : kanto_pathfind_next_step(
+            : kanto_pathfind_next_run(
                   pos->tile_x, pos->tile_y,
-                  goal.tile_x, goal.tile_y
+                  goal.tile_x, goal.tile_y,
+                  burst_cap, &run_len
               );
         if (!next && !step_chosen){
             astar_failures++;
@@ -719,13 +787,20 @@ static void kanto_navigate_impl(
             last_step = kanto_step_to_joystick(*next);
         }
 
+        //  A greedy or escape step is a single tile: neither is following a
+        //  planned route, so there is no straight segment to commit to.
+        if (step_chosen || !next){
+            run_len = 1;
+        }
+        run_len = std::max(1, std::min(run_len, burst_cap));
+
         const char* region = kanto_region_name(kanto_region_at(pos->tile_x, pos->tile_y));
-        char log_buf[200];
+        char log_buf[220];
         std::snprintf(
             log_buf, sizeof(log_buf),
-            "Step %d: %s (%d,%d) conf=%.3f, going %s",
+            "Step %d: %s (%d,%d) conf=%.3f, going %s x%d",
             step + 1, region, pos->tile_x, pos->tile_y,
-            pos->confidence, last_step.name
+            pos->confidence, last_step.name, run_len
         );
         env.log(log_buf);
 
@@ -745,10 +820,27 @@ static void kanto_navigate_impl(
         FrozenImageDetector frozen(std::chrono::milliseconds(2500), 10.0);
         BlackScreenOverWatcher door_fade(COLOR_RED);
 
+        //  Hold the stick for the whole segment, with B down to run.
+        //
+        //  pbf_controller_state drives button and stick together, which is what
+        //  running requires -- B alone does nothing in the overworld, and B with
+        //  a direction is the Running Shoes. The watchers still run in parallel,
+        //  so an encounter cuts the hold short exactly as it did a single step.
+        const Milliseconds hold_ms = std::chrono::milliseconds(
+            (prev_step_was_turn ? TURN_ALLOWANCE_MS : 0) + run_len * RUN_TILE_MS
+        );
         int ret = run_until<ProControllerContext>(
             env.console, context,
             [&](ProControllerContext& sub){
-                pbf_move_left_joystick(sub, {last_step.jx, last_step.jy}, STEP_HOLD, STEP_RELEASE);
+                pbf_controller_state(
+                    sub,
+                    BUTTON_B,
+                    DPAD_NONE,
+                    {last_step.jx, last_step.jy},
+                    {0.0, 0.0},
+                    hold_ms
+                );
+                pbf_wait(sub, STEP_RELEASE);
             },
             {encounter, frozen, door_fade}
         );
@@ -822,6 +914,24 @@ static void kanto_navigate_impl(
             have_facing = false;
             prev_step_was_turn = false;
         }
+
+        //  Aim the next fix's search window.
+        //
+        //  An uninterrupted burst should land run_len tiles along, but an
+        //  interrupted one may have travelled anything from 0 to run_len. Centre
+        //  the window on the midpoint so both ends are inside it, and widen the
+        //  radius by half the burst. For run_len == 1 this is the previous
+        //  behaviour exactly: centre on the tile ahead, radius HINT_RADIUS_TILES.
+        //
+        //  Interrupted bursts do not get the benefit of the doubt -- an
+        //  encounter stops the player where they stood, so search from there.
+        const int travelled = prev_step_interrupted ? 0 : run_len;
+        const int dx_tile = (int)last_step.jx;
+        const int dy_tile = -(int)last_step.jy;
+        hint_x = pos->tile_x + dx_tile * (travelled / 2);
+        hint_y = pos->tile_y + dy_tile * (travelled / 2);
+        hint_radius = HINT_RADIUS_TILES + (travelled + 1) / 2;
+        tiles_in_flight = std::max(1, travelled);
     }
 
     OperationFailedException::fire(
