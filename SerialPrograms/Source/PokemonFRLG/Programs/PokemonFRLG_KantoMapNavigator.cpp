@@ -5,6 +5,7 @@
  */
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -37,7 +38,17 @@ constexpr Step STEP_SOUTH{0.0, -1.0, "south"};
 constexpr Step STEP_EAST {+1.0,  0.0, "east"};
 constexpr Step STEP_WEST {-1.0,  0.0, "west"};
 
-constexpr int MAX_FLEES = 5;
+//  Wild encounters during travel are routine, not a failure. Routes run through
+//  grass, and a heal trip across Route 1 or Route 22 will legitimately trigger
+//  a dozen of them -- the old cap of 5 killed runs for doing exactly the right
+//  thing.
+//
+//  What actually matters is whether we are still getting closer to the goal. So
+//  the counter resets on every new closest approach (see best_distance below)
+//  and this cap only trips when we have fled that many times WITHOUT making any
+//  progress, which is a real stall: a battle we cannot escape, or an encounter
+//  loop on a tile we cannot leave.
+constexpr int MAX_FLEES_WITHOUT_PROGRESS = 12;
 constexpr int MAX_UNKNOWN_POLLS = 15;
 constexpr int MAX_NO_PROGRESS = 8;
 constexpr auto STEP_HOLD = std::chrono::milliseconds(150);
@@ -195,6 +206,11 @@ static void kanto_navigate_impl(
     const KantoMapDetector& detector = KantoMapDetector::instance();
 
     int flees = 0;
+
+    //  Closest we have ever been to the goal on this trip, in tiles. Every new
+    //  best resets the flee counter: encounters are only a problem when they
+    //  stop us getting anywhere.
+    int best_distance = INT_MAX;
     int unknown_polls = 0;
     int no_progress_count = 0;
     int learned_blocks = 0;
@@ -266,17 +282,17 @@ static void kanto_navigate_impl(
     //  Shared by the pre-locate battle gate and the unknown-position probe.
     auto flee_encounter = [&](const std::string& why){
         flees++;
-        if (flees > MAX_FLEES){
+        if (flees > MAX_FLEES_WITHOUT_PROGRESS){
             OperationFailedException::fire(
                 ErrorReport::SEND_ERROR_REPORT,
-                "Too many wild encounters (>" + std::to_string(MAX_FLEES) +
-                    ") during navigation. Aborting.",
+                "Fled " + std::to_string(flees) + " encounters without getting any "
+                "closer to the goal. Not a busy patch of grass -- something is "
+                "keeping us in one place.",
                 env.console
             );
         }
         env.log(
-            why + " Fleeing (" + std::to_string(flees) + "/" +
-                std::to_string(MAX_FLEES) + ").",
+            why + " Fleeing (" + std::to_string(flees) + " since last progress).",
             COLOR_YELLOW
         );
         flee_battle(env.console, context);
@@ -632,6 +648,18 @@ static void kanto_navigate_impl(
         //  map instead of believing the player.
         kanto_mark_tile_walkable(pos->tile_x, pos->tile_y);
 
+        //  Getting closer clears the encounter budget. Ten fights on the way
+        //  across a route is a normal Tuesday; ten fights without gaining a tile
+        //  is a stall.
+        {
+            const int distance =
+                std::abs(pos->tile_x - goal.tile_x) + std::abs(pos->tile_y - goal.tile_y);
+            if (distance < best_distance){
+                best_distance = distance;
+                flees = 0;
+            }
+        }
+
         prev_x = pos->tile_x;
         prev_y = pos->tile_y;
         have_prev_pos = true;
@@ -864,17 +892,18 @@ static void kanto_navigate_impl(
         switch (ret){
         case 0: {
             flees++;
-            if (flees > MAX_FLEES){
+            if (flees > MAX_FLEES_WITHOUT_PROGRESS){
                 OperationFailedException::fire(
                     ErrorReport::SEND_ERROR_REPORT,
-                    "Too many wild encounters (>" + std::to_string(MAX_FLEES) +
-                        ") during navigation. Aborting.",
+                    "Fled " + std::to_string(flees) + " encounters without getting any "
+                    "closer to the goal. Not a busy patch of grass -- something is "
+                    "keeping us in one place.",
                     env.console
                 );
             }
             env.log(
                 std::string("Encounter mid-step. Fleeing (") +
-                std::to_string(flees) + "/" + std::to_string(MAX_FLEES) + ").",
+                std::to_string(flees) + " since last progress).",
                 COLOR_YELLOW
             );
             flee_battle(env.console, context);
@@ -893,10 +922,12 @@ static void kanto_navigate_impl(
             );
             if (probe == 0){
                 flees++;
-                if (flees > MAX_FLEES){
+                if (flees > MAX_FLEES_WITHOUT_PROGRESS){
                     OperationFailedException::fire(
                         ErrorReport::SEND_ERROR_REPORT,
-                        "Too many wild encounters during navigation. Aborting.",
+                        "Fled " + std::to_string(flees) + " encounters without getting any "
+                        "closer to the goal. Not a busy patch of grass -- something is "
+                        "keeping us in one place.",
                         env.console
                     );
                 }
