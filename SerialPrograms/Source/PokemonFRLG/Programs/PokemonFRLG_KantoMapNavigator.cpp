@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <climits>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <set>
 #include "Common/Cpp/Color.h"
 #include "CommonFramework/Exceptions/OperationFailedException.h"
 #include "CommonFramework/VideoPipeline/VideoFeed.h"
@@ -116,6 +118,14 @@ constexpr int NO_PROGRESS_BEFORE_LEARNING = 3;
 //  and blacklisting our way across it would carve real holes in the map for the
 //  rest of the session -- better to fail and say so.
 constexpr int MAX_LEARNED_BLOCKS_PER_NAVIGATION = 16;
+
+//  How many distinct tiles escape mode may explore before giving up. A ledge
+//  pocket on Route 22 is a handful of tiles; thirty means we are wandering.
+constexpr int MAX_ESCAPE_TILES = 30;
+
+inline uint32_t tile_key(int x, int y){
+    return (uint32_t)(x & 0xFFFF) | ((uint32_t)(y & 0xFFFF) << 16);
+}
 
 //  ---- Burst walking -----------------------------------------------------
 //
@@ -272,6 +282,9 @@ static void kanto_navigate_impl(
     int rejected_jumps = 0;
     //  Consecutive A* failures. Reset whenever A* returns a step.
     int astar_failures = 0;
+    //  Tiles stood on since A* last failed. Cleared the moment A* can plan
+    //  again -- it exists only to stop escape mode retreading its own steps.
+    std::set<uint32_t> escape_visited;
     //  Consecutive steps spent escaping a start tile the mask calls blocked.
     //  Reset as soon as we are standing somewhere A* can plan from.
     int blocked_start_escapes = 0;
@@ -820,68 +833,115 @@ static void kanto_navigate_impl(
                 continue;
             }
 
-            //  Repeated failures from a position we keep re-confirming: treat the
-            //  mask as wrong here and nudge toward the goal on the dominant axis.
-            int dx = goal.tile_x - pos->tile_x;
-            int dy = goal.tile_y - pos->tile_y;
-
-            //  Rank the four directions by how much they close the gap, then
-            //  take the best one we have not already proved impossible.
+            //  Escape mode.
             //
-            //  The old version took the dominant axis unconditionally. When that
-            //  direction was a wall we had already learned about, it pressed into
-            //  it, learned nothing new, and picked the same direction again --
-            //  observed 2026-08-19 as 26 consecutive "A* failed at (39,201).
-            //  Falling back to greedy east" against a tree, until the run died.
-            //  A fallback that ignores what we know is not a fallback.
-            struct Cand{ Step step; KantoStep ks; int gain; };
-            const Cand CANDS[4] = {
-                {STEP_EAST,  KantoStep::East,  dx > 0 ?  std::abs(dx) : -std::abs(dx)},
-                {STEP_WEST,  KantoStep::West,  dx < 0 ?  std::abs(dx) : -std::abs(dx)},
-                {STEP_SOUTH, KantoStep::South, dy > 0 ?  std::abs(dy) : -std::abs(dy)},
-                {STEP_NORTH, KantoStep::North, dy < 0 ?  std::abs(dy) : -std::abs(dy)},
-            };
-            const int NEIGH_DX[4] = {+1, -1, 0, 0};
-            const int NEIGH_DY[4] = {0, 0, +1, -1};
+            //  A* has no route from here, which after a one-way ledge is the
+            //  normal case: you hop down into a pocket whose real exit the mask
+            //  does not know about. Hill-climbing toward the goal does not work
+            //  there -- with no memory it just oscillates. Observed 2026-08-19:
+            //  (45,207) greedy north, (45,206) greedy south, back and forth 180
+            //  times until the step budget died, because east was walled and
+            //  north/south scored identically from each tile.
+            //
+            //  So: explore instead of hill-climb. Remember where we have been
+            //  since A* started failing and prefer somewhere new, and be willing
+            //  to walk at tiles the mask calls solid -- the mask is wrong often
+            //  enough that probing one is a reasonable move when the alternative
+            //  is a dead end. Every tile we actually reach is recorded walkable,
+            //  so a successful probe grows the map and usually lets A* re-plan.
+            escape_visited.insert(tile_key(pos->tile_x, pos->tile_y));
+            if ((int)escape_visited.size() > MAX_ESCAPE_TILES){
+                OperationFailedException::fire(
+                    ErrorReport::SEND_ERROR_REPORT,
+                    "Explored " + std::to_string(escape_visited.size()) + " tiles around (" +
+                        std::to_string(pos->tile_x) + "," + std::to_string(pos->tile_y) +
+                        ") without finding anywhere A* can plan a route to the goal from. "
+                        "Either the map is wrong over a wide area here, or this really is "
+                        "a pocket with no way out.",
+                    env.console
+                );
+            }
 
+            const int dx = goal.tile_x - pos->tile_x;
+            const int dy = goal.tile_y - pos->tile_y;
+            struct Cand{ Step step; KantoStep ks; int ddx; int ddy; int gain; };
+            const Cand CANDS[4] = {
+                {STEP_EAST,  KantoStep::East,  +1,  0, dx > 0 ?  std::abs(dx) : -std::abs(dx)},
+                {STEP_WEST,  KantoStep::West,  -1,  0, dx < 0 ?  std::abs(dx) : -std::abs(dx)},
+                {STEP_SOUTH, KantoStep::South,  0, +1, dy > 0 ?  std::abs(dy) : -std::abs(dy)},
+                {STEP_NORTH, KantoStep::North,  0, -1, dy < 0 ?  std::abs(dy) : -std::abs(dy)},
+            };
+
+            //  Preference order, most significant first:
+            //    1. somewhere we have not already been during this escape
+            //    2. somewhere the map believes is walkable
+            //    3. whichever closes the distance to the goal most
             Step fb = STEP_NORTH;
-            int best_gain = INT_MIN;
             bool found_fb = false;
-            for (int i = 0; i < 4; i++){
-                if (kanto_edge_blocked(pos->tile_x, pos->tile_y, CANDS[i].ks)){
+            bool best_fresh = false, best_walkable = false;
+            int best_gain = INT_MIN;
+            bool probing = false;
+            for (const Cand& c : CANDS){
+                if (kanto_edge_blocked(pos->tile_x, pos->tile_y, c.ks)){
                     continue;
                 }
-                const int nx = pos->tile_x + NEIGH_DX[i];
-                const int ny = pos->tile_y + NEIGH_DY[i];
-                if (!kanto_tile_walkable(nx, ny)){
+                const int nx = pos->tile_x + c.ddx;
+                const int ny = pos->tile_y + c.ddy;
+                if (nx < 0 || ny < 0){
                     continue;
                 }
-                if (CANDS[i].gain > best_gain){
-                    best_gain = CANDS[i].gain;
-                    fb = CANDS[i].step;
+                const bool fresh = escape_visited.find(tile_key(nx, ny)) == escape_visited.end();
+                const bool walkable = kanto_tile_walkable(nx, ny);
+
+                bool better;
+                if (!found_fb){
+                    better = true;
+                }else if (fresh != best_fresh){
+                    better = fresh;
+                }else if (walkable != best_walkable){
+                    better = walkable;
+                }else{
+                    better = c.gain > best_gain;
+                }
+                if (better){
                     found_fb = true;
+                    best_fresh = fresh;
+                    best_walkable = walkable;
+                    best_gain = c.gain;
+                    fb = c.step;
+                    probing = !walkable;
                 }
             }
             if (!found_fb){
                 OperationFailedException::fire(
                     ErrorReport::SEND_ERROR_REPORT,
                     "No route to the goal from (" + std::to_string(pos->tile_x) + "," +
-                        std::to_string(pos->tile_y) + "), and every direction out of "
-                        "this tile is a known wall. The map is wrong here, or we are "
-                        "somewhere the map does not describe.",
+                        std::to_string(pos->tile_y) + "), and all four directions out of "
+                        "this tile are edges we have already proved impassable.",
                     env.console
                 );
             }
             env.log(
                 std::string("A* failed at (") +
                 std::to_string(pos->tile_x) + "," +
-                std::to_string(pos->tile_y) + "). Falling back to greedy " +
-                fb.name + ".",
+                std::to_string(pos->tile_y) + "). Escaping " + fb.name +
+                (probing ? " (probing a tile the map calls solid)" : "") +
+                " -- " + std::to_string(escape_visited.size()) + " tile(s) explored.",
                 COLOR_YELLOW
             );
             last_step = fb;
         }else if (next){
             astar_failures = 0;
+            //  Back on a planned route. Whatever escape mode explored is history.
+            if (!escape_visited.empty()){
+                env.log(
+                    "Escaped: A* can plan from (" + std::to_string(pos->tile_x) + "," +
+                        std::to_string(pos->tile_y) + ") again after exploring " +
+                        std::to_string(escape_visited.size()) + " tile(s).",
+                    COLOR_BLUE
+                );
+                escape_visited.clear();
+            }
             last_step = kanto_step_to_joystick(*next);
         }
 
