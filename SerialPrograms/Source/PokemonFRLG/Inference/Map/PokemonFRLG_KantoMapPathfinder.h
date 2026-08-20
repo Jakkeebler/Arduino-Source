@@ -45,16 +45,21 @@ std::optional<KantoStep> kanto_pathfind_next_run(
 
 bool kanto_tile_walkable(int tile_x, int tile_y);
 
-//  Runtime obstacle learning.
+//  Runtime map learning. Process-lifetime only -- nothing is persisted to disk.
 //
-//  The generated walkable mask has systematic defects. Rather than requiring a
-//  hand-written override for every one, the navigator calls
-//  kanto_mark_tile_blocked() when it has proved the player cannot walk into a
-//  tile, and A* routes around it for the rest of the process's life.
-//  Process-lifetime only -- nothing is persisted to disk.
-void kanto_mark_tile_blocked(int tile_x, int tile_y);
-void kanto_clear_learned_blocks();
-size_t kanto_learned_block_count();
+//  Two distinct facts, which must not be conflated:
+//
+//    * kanto_mark_tile_walkable() -- we have STOOD on this tile, so it is
+//      walkable whatever the generated mask says.
+//    * kanto_mark_edge_blocked() -- we could not move in this direction FROM
+//      this tile. That is a fact about the edge, not about the destination:
+//      Gen 3 ledges are one-way, so failing to walk north out of a tile says
+//      nothing about whether the tile to the north is walkable.
+void kanto_mark_tile_walkable(int tile_x, int tile_y);
+void kanto_mark_edge_blocked(int tile_x, int tile_y, KantoStep dir);
+bool kanto_edge_blocked(int tile_x, int tile_y, KantoStep dir);
+void kanto_clear_learned();
+size_t kanto_learned_edge_count();
 
 }
 }

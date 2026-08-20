@@ -106,37 +106,58 @@ constexpr MaskOverride MASK_OVERRIDES[] = {
     {46, 200, 54, 208, false},
 };
 
-//  Runtime-learned obstacles.
+//  Runtime-learned map facts.
 //
 //  The generated mask has systematic defects -- mountain interiors marked
 //  walkable, tree columns blocked only on alternating rows -- and hand-patching
 //  each one as it is discovered does not scale to a 408x400 map that is only
-//  partly explored. When the navigator proves the player cannot walk into a
-//  tile, it records that here and A* routes around it for the rest of the
-//  session. Empirical evidence outranks both tables, so this is checked first.
+//  partly explored. So the navigator records what it learns by actually walking,
+//  and that outranks both tables.
+//
+//  There are two kinds of fact, and conflating them is a bug I already shipped
+//  once:
+//
+//    * A tile we have STOOD on is walkable. Nothing else is as reliable.
+//    * Being unable to move in a direction is a fact about that EDGE, not about
+//      the destination tile. Gen 3 ledges are one-way -- you hop south over them
+//      and cannot walk back north -- so "could not go north from here" says
+//      nothing about whether the tile to the north is walkable. On 2026-08-19 the
+//      navigator hopped a Route 22 ledge, failed to walk back up, and recorded
+//      the tile it had just walked through as unwalkable.
 //
 //  Deliberately process-lifetime and not persisted: a wrong entry (an NPC that
-//  happened to be standing there) costs one slightly longer route and is gone
-//  on the next launch, whereas a persisted wrong entry would be a permanent
-//  hole in the map with no obvious cause.
+//  happened to be standing there) costs one slightly longer route and is gone on
+//  the next launch, whereas a persisted wrong entry would be a permanent hole in
+//  the map with no obvious cause.
 std::mutex g_learned_lock;
-std::set<uint32_t> g_learned_blocked;
+std::set<uint32_t> g_learned_walkable;
+std::set<uint32_t> g_learned_edges;
 
 inline uint32_t key(int x, int y){
     return (uint32_t)(x & 0xFFFF) | ((uint32_t)(y & 0xFFFF) << 16);
 }
-
-bool learned_blocked(int x, int y){
-    std::lock_guard<std::mutex> lg(g_learned_lock);
-    return g_learned_blocked.find(key(x, y)) != g_learned_blocked.end();
+inline int step_index(KantoStep s){
+    switch (s){
+    case KantoStep::North: return 0;
+    case KantoStep::South: return 1;
+    case KantoStep::East:  return 2;
+    case KantoStep::West:  return 3;
+    }
+    return 0;
+}
+inline uint32_t edge_key(int x, int y, KantoStep dir){
+    return ((uint32_t)((y * KANTO_MASK_COLS) + x) << 2) | (uint32_t)step_index(dir);
 }
 
 bool walkable(int x, int y){
     if (x < 0 || y < 0 || x >= KANTO_MASK_COLS || y >= KANTO_MASK_ROWS){
         return false;
     }
-    if (learned_blocked(x, y)){
-        return false;
+    {
+        std::lock_guard<std::mutex> lg(g_learned_lock);
+        if (g_learned_walkable.find(key(x, y)) != g_learned_walkable.end()){
+            return true;
+        }
     }
     for (const MaskOverride& o : MASK_OVERRIDES){
         if (x >= o.x0 && x <= o.x1 && y >= o.y0 && y <= o.y1){
@@ -149,17 +170,26 @@ bool walkable(int x, int y){
 }  // namespace
 
 
-void kanto_mark_tile_blocked(int tile_x, int tile_y){
+void kanto_mark_tile_walkable(int tile_x, int tile_y){
     std::lock_guard<std::mutex> lg(g_learned_lock);
-    g_learned_blocked.insert(key(tile_x, tile_y));
+    g_learned_walkable.insert(key(tile_x, tile_y));
 }
-void kanto_clear_learned_blocks(){
+void kanto_mark_edge_blocked(int tile_x, int tile_y, KantoStep dir){
     std::lock_guard<std::mutex> lg(g_learned_lock);
-    g_learned_blocked.clear();
+    g_learned_edges.insert(edge_key(tile_x, tile_y, dir));
 }
-size_t kanto_learned_block_count(){
+bool kanto_edge_blocked(int tile_x, int tile_y, KantoStep dir){
     std::lock_guard<std::mutex> lg(g_learned_lock);
-    return g_learned_blocked.size();
+    return g_learned_edges.find(edge_key(tile_x, tile_y, dir)) != g_learned_edges.end();
+}
+void kanto_clear_learned(){
+    std::lock_guard<std::mutex> lg(g_learned_lock);
+    g_learned_walkable.clear();
+    g_learned_edges.clear();
+}
+size_t kanto_learned_edge_count(){
+    std::lock_guard<std::mutex> lg(g_learned_lock);
+    return g_learned_edges.size();
 }
 
 
@@ -230,6 +260,11 @@ std::vector<KantoStep> pathfind_route(
         for (const auto& n : NEIGHBORS){
             int nx = cur.x + n.dx;
             int ny = cur.y + n.dy;
+            //  An edge we have already proved impassable stays impassable even
+            //  when both tiles are walkable -- that is exactly what a ledge is.
+            if (kanto_edge_blocked(cur.x, cur.y, n.step)){
+                continue;
+            }
             if (!walkable(nx, ny)){
                 if (!(nx == goal_x && ny == goal_y)){
                     continue;

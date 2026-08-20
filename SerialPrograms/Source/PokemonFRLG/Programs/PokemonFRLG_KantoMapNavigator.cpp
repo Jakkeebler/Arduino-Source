@@ -136,6 +136,16 @@ constexpr int MAX_BURST_TILES = 8;
 //  are then taken one at a time with a fix after each.
 constexpr int CAUTIOUS_BURST_TILES = 1;
 
+//  Inverse of kanto_step_to_joystick(). jy is joystick-up-positive while tile
+//  rows increase southward, which is the sign flip that makes this worth having
+//  in one place.
+KantoStep joystick_to_kanto_step(const Step& s){
+    if (s.jx < 0) return KantoStep::West;
+    if (s.jx > 0) return KantoStep::East;
+    if (s.jy > 0) return KantoStep::North;
+    return KantoStep::South;
+}
+
 Step kanto_step_to_joystick(KantoStep ks){
     switch (ks){
     case KantoStep::North: return STEP_NORTH;
@@ -571,28 +581,25 @@ static void kanto_navigate_impl(
             //  marked walkable, tree columns blocked on alternating rows -- and
             //  we only find them one dead run at a time.
             if (no_progress_count >= NO_PROGRESS_BEFORE_LEARNING){
-                //  jy is joystick-up-positive; tile rows increase southward.
-                const int blocked_x = pos->tile_x + (int)last_step.jx;
-                const int blocked_y = pos->tile_y - (int)last_step.jy;
-                const bool is_goal = blocked_x == goal.tile_x && blocked_y == goal.tile_y;
-                if (is_goal){
-                    //  Never blacklist the destination -- that turns a reachable
-                    //  goal into a permanently unplannable one.
-                    env.log(
-                        "Cannot enter the goal tile itself. Not blacklisting it.",
-                        COLOR_RED
+                if (learned_blocks < MAX_LEARNED_BLOCKS_PER_NAVIGATION){
+                    //  Record the EDGE, not the destination tile.
+                    //
+                    //  "I could not walk north out of here" does not mean the
+                    //  tile to the north is solid -- a Gen 3 ledge is one-way, so
+                    //  the tile above may be one we walked through on the way
+                    //  down. Blacklisting it, as the first version of this did,
+                    //  carves a hole in a route that actually works.
+                    kanto_mark_edge_blocked(
+                        pos->tile_x, pos->tile_y, joystick_to_kanto_step(last_step)
                     );
-                }else if (learned_blocks < MAX_LEARNED_BLOCKS_PER_NAVIGATION){
-                    kanto_mark_tile_blocked(blocked_x, blocked_y);
                     learned_blocks++;
                     env.log(
-                        "Blocked going " + std::string(last_step.name) + " from (" +
+                        "Cannot go " + std::string(last_step.name) + " from (" +
                             std::to_string(pos->tile_x) + "," + std::to_string(pos->tile_y) +
-                            "). Marking (" + std::to_string(blocked_x) + "," +
-                            std::to_string(blocked_y) + ") unwalkable and re-routing. " +
+                            ") -- wall, or a one-way ledge. Closing that edge and re-routing. " +
                             std::to_string(learned_blocks) + "/" +
                             std::to_string(MAX_LEARNED_BLOCKS_PER_NAVIGATION) +
-                            " this trip, " + std::to_string(kanto_learned_block_count()) +
+                            " this trip, " + std::to_string(kanto_learned_edge_count()) +
                             " this session.",
                         COLOR_BLUE
                     );
@@ -616,6 +623,15 @@ static void kanto_navigate_impl(
         }else{
             no_progress_count = 0;
         }
+        //  We are standing here, so this tile is walkable -- whatever the
+        //  generated mask says about it. This is the single most reliable fact
+        //  the navigator ever has, and recording it is what stops the run dying
+        //  with "standing on a tile the walkable mask calls blocked": on
+        //  2026-08-19 a ledge hop landed the player on a tile the mask called
+        //  solid, and the escape logic burned its whole budget arguing with the
+        //  map instead of believing the player.
+        kanto_mark_tile_walkable(pos->tile_x, pos->tile_y);
+
         prev_x = pos->tile_x;
         prev_y = pos->tile_y;
         have_prev_pos = true;
