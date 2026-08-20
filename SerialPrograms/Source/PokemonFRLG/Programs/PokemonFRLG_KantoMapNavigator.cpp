@@ -115,7 +115,7 @@ constexpr int NO_PROGRESS_BEFORE_LEARNING = 3;
 //  either mis-localized or somewhere the map describes wholesale incorrectly,
 //  and blacklisting our way across it would carve real holes in the map for the
 //  rest of the session -- better to fail and say so.
-constexpr int MAX_LEARNED_BLOCKS_PER_NAVIGATION = 8;
+constexpr int MAX_LEARNED_BLOCKS_PER_NAVIGATION = 16;
 
 //  ---- Burst walking -----------------------------------------------------
 //
@@ -597,7 +597,21 @@ static void kanto_navigate_impl(
             //  marked walkable, tree columns blocked on alternating rows -- and
             //  we only find them one dead run at a time.
             if (no_progress_count >= NO_PROGRESS_BEFORE_LEARNING){
-                if (learned_blocks < MAX_LEARNED_BLOCKS_PER_NAVIGATION){
+                const KantoStep tried = joystick_to_kanto_step(last_step);
+                if (kanto_edge_blocked(pos->tile_x, pos->tile_y, tried)){
+                    //  Already knew this one. Re-recording it teaches nothing and
+                    //  spends the trip's learning budget on a duplicate -- on
+                    //  2026-08-19 the same edge was "learned" three times while
+                    //  the greedy fallback kept steering back into it. Let the
+                    //  no-progress counter run on to the hard failure instead;
+                    //  something upstream is choosing a direction we know is dead.
+                    env.log(
+                        "Still being pushed " + std::string(last_step.name) + " from (" +
+                            std::to_string(pos->tile_x) + "," + std::to_string(pos->tile_y) +
+                            "), which is already a known wall.",
+                        COLOR_RED
+                    );
+                }else if (learned_blocks < MAX_LEARNED_BLOCKS_PER_NAVIGATION){
                     //  Record the EDGE, not the destination tile.
                     //
                     //  "I could not walk north out of here" does not mean the
@@ -810,13 +824,53 @@ static void kanto_navigate_impl(
             //  mask as wrong here and nudge toward the goal on the dominant axis.
             int dx = goal.tile_x - pos->tile_x;
             int dy = goal.tile_y - pos->tile_y;
-            Step fb;
-            if (std::abs(dx) > std::abs(dy)){
-                fb = (dx > 0) ? STEP_EAST : STEP_WEST;
-            }else if (dy != 0){
-                fb = (dy > 0) ? STEP_SOUTH : STEP_NORTH;
-            }else{
-                fb = STEP_NORTH;
+
+            //  Rank the four directions by how much they close the gap, then
+            //  take the best one we have not already proved impossible.
+            //
+            //  The old version took the dominant axis unconditionally. When that
+            //  direction was a wall we had already learned about, it pressed into
+            //  it, learned nothing new, and picked the same direction again --
+            //  observed 2026-08-19 as 26 consecutive "A* failed at (39,201).
+            //  Falling back to greedy east" against a tree, until the run died.
+            //  A fallback that ignores what we know is not a fallback.
+            struct Cand{ Step step; KantoStep ks; int gain; };
+            const Cand CANDS[4] = {
+                {STEP_EAST,  KantoStep::East,  dx > 0 ?  std::abs(dx) : -std::abs(dx)},
+                {STEP_WEST,  KantoStep::West,  dx < 0 ?  std::abs(dx) : -std::abs(dx)},
+                {STEP_SOUTH, KantoStep::South, dy > 0 ?  std::abs(dy) : -std::abs(dy)},
+                {STEP_NORTH, KantoStep::North, dy < 0 ?  std::abs(dy) : -std::abs(dy)},
+            };
+            const int NEIGH_DX[4] = {+1, -1, 0, 0};
+            const int NEIGH_DY[4] = {0, 0, +1, -1};
+
+            Step fb = STEP_NORTH;
+            int best_gain = INT_MIN;
+            bool found_fb = false;
+            for (int i = 0; i < 4; i++){
+                if (kanto_edge_blocked(pos->tile_x, pos->tile_y, CANDS[i].ks)){
+                    continue;
+                }
+                const int nx = pos->tile_x + NEIGH_DX[i];
+                const int ny = pos->tile_y + NEIGH_DY[i];
+                if (!kanto_tile_walkable(nx, ny)){
+                    continue;
+                }
+                if (CANDS[i].gain > best_gain){
+                    best_gain = CANDS[i].gain;
+                    fb = CANDS[i].step;
+                    found_fb = true;
+                }
+            }
+            if (!found_fb){
+                OperationFailedException::fire(
+                    ErrorReport::SEND_ERROR_REPORT,
+                    "No route to the goal from (" + std::to_string(pos->tile_x) + "," +
+                        std::to_string(pos->tile_y) + "), and every direction out of "
+                        "this tile is a known wall. The map is wrong here, or we are "
+                        "somewhere the map does not describe.",
+                    env.console
+                );
             }
             env.log(
                 std::string("A* failed at (") +

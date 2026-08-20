@@ -104,6 +104,25 @@ constexpr MaskOverride MASK_OVERRIDES[] = {
     //  from Viridian to (52,199), then pressed south into the rock face eight
     //  times and the run died before the first encounter.
     {46, 200, 54, 208, false},
+
+    //  --- Route 22 tree column, east side of the grass ---------------------
+    //  Two columns of pines standing between the Route 22 east grass and the
+    //  sand path, x=40..41, y=198..203. Classic alternating-row defect: the
+    //  generator marks the trunk rows blocked and reads the pale canopy rows as
+    //  open ground.
+    //
+    //  This is the only way the mask thinks you can leave the grass, so on
+    //  2026-08-19 the program walked in, went Out of PP, and then could not
+    //  path back to the Poke Center: every route it planned ran east through
+    //  these trees, and it pressed east into them until the run died. The real
+    //  exit is south to y=204 and east along it -- 54 steps against the 48 the
+    //  mask believes, and verified reachable by flood fill with this rect in
+    //  place.
+    //
+    //  Stated as a rect rather than as learned edges because learning it one
+    //  edge at a time costs six separate three-press failures and blows the
+    //  per-trip learning budget before it finds the way round.
+    {40, 198, 41, 203, false},
 };
 
 //  Runtime-learned map facts.
