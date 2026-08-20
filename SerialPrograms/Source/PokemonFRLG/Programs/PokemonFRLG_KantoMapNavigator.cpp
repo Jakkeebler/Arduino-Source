@@ -144,6 +144,13 @@ constexpr int RUN_TILE_MS = 138;
 //  turning on the spot before they move. Pay it once per burst, not per tile.
 constexpr int TURN_ALLOWANCE_MS = 100;
 
+//  A ledge hop is a single press of South, but the player is carried two tiles
+//  and the vault animation is longer than a walk cycle. Hold long enough to see
+//  it through -- the hop is automatic once started, so overshooting the hold
+//  only risks one extra walked tile on the far side, which the next fix
+//  corrects.
+constexpr int LEDGE_HOP_MS = 620;
+
 //  Tiles per burst. Bounded by localization, not by movement: the position fix
 //  afterwards has to search a window big enough to contain both "walked the
 //  whole way" and "stopped immediately", and that window grows with the burst.
@@ -952,13 +959,25 @@ static void kanto_navigate_impl(
         }
         run_len = std::max(1, std::min(run_len, burst_cap));
 
+        //  Ledge hop: one press of South, but the player travels two tiles and
+        //  the animation is longer than a walk cycle. It cannot be batched with
+        //  the steps after it, and holding the stick for a normal tile's worth of
+        //  time is not enough to see it through.
+        const bool hopping =
+            last_step.jy < 0 &&
+            kanto_ledge_hop_target(pos->tile_x, pos->tile_y, nullptr);
+        if (hopping){
+            run_len = 1;
+        }
+
         const char* region = kanto_region_name(kanto_region_at(pos->tile_x, pos->tile_y));
         char log_buf[220];
         std::snprintf(
             log_buf, sizeof(log_buf),
-            "Step %d: %s (%d,%d) conf=%.3f, going %s x%d",
+            "Step %d: %s (%d,%d) conf=%.3f, going %s x%d%s",
             step + 1, region, pos->tile_x, pos->tile_y,
-            pos->confidence, last_step.name, run_len
+            pos->confidence, last_step.name, run_len,
+            hopping ? " (ledge hop)" : ""
         );
         env.log(log_buf);
 
@@ -985,7 +1004,8 @@ static void kanto_navigate_impl(
         //  a direction is the Running Shoes. The watchers still run in parallel,
         //  so an encounter cuts the hold short exactly as it did a single step.
         const Milliseconds hold_ms = std::chrono::milliseconds(
-            (prev_step_was_turn ? TURN_ALLOWANCE_MS : 0) + run_len * RUN_TILE_MS
+            (prev_step_was_turn ? TURN_ALLOWANCE_MS : 0) +
+            (hopping ? LEDGE_HOP_MS : run_len * RUN_TILE_MS)
         );
         int ret = run_until<ProControllerContext>(
             env.console, context,
@@ -1086,7 +1106,9 @@ static void kanto_navigate_impl(
         //
         //  Interrupted bursts do not get the benefit of the doubt -- an
         //  encounter stops the player where they stood, so search from there.
-        const int travelled = prev_step_interrupted ? 0 : run_len;
+        //  A hop covers two tiles on one press, so the next fix has to expect the
+        //  player two rows down, not one.
+        const int travelled = prev_step_interrupted ? 0 : (hopping ? 2 : run_len);
         const int dx_tile = (int)last_step.jx;
         const int dy_tile = -(int)last_step.jy;
         hint_x = pos->tile_x + dx_tile * (travelled / 2);

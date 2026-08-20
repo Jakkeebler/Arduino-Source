@@ -12,6 +12,7 @@
 #include <set>
 #include <unordered_map>
 #include <vector>
+#include "PokemonFRLG_KantoLedges_Generated.h"
 #include "PokemonFRLG_KantoMapMasks_Generated.h"
 #include "PokemonFRLG_KantoMapPathfinder.h"
 
@@ -178,6 +179,11 @@ bool walkable(int x, int y){
             return true;
         }
     }
+    //  You cannot stand on a ledge -- you hop over it. Handled as a special
+    //  move in the search below rather than as an ordinary walkable tile.
+    if (kanto_is_ledge_south(x, y)){
+        return false;
+    }
     for (const MaskOverride& o : MASK_OVERRIDES){
         if (x >= o.x0 && x <= o.x1 && y >= o.y0 && y <= o.y1){
             return o.walkable;
@@ -211,6 +217,29 @@ size_t kanto_learned_edge_count(){
     return g_learned_edges.size();
 }
 
+
+bool kanto_is_ledge_south(int tile_x, int tile_y){
+    if (tile_x < 0 || tile_y < 0 || tile_x >= KANTO_LEDGE_COLS){
+        return false;
+    }
+    const uint32_t k = (uint32_t)(tile_y * KANTO_LEDGE_COLS + tile_x);
+    return std::binary_search(
+        KANTO_LEDGE_SOUTH,
+        KANTO_LEDGE_SOUTH + KANTO_LEDGE_SOUTH_COUNT,
+        k
+    );
+}
+
+bool kanto_ledge_hop_target(int tile_x, int tile_y, int* landing_y){
+    if (!kanto_is_ledge_south(tile_x, tile_y + 1)){
+        return false;
+    }
+    if (!walkable(tile_x, tile_y + 2)){
+        return false;
+    }
+    if (landing_y) *landing_y = tile_y + 2;
+    return true;
+}
 
 bool kanto_tile_walkable(int tile_x, int tile_y){
     return walkable(tile_x, tile_y);
@@ -295,6 +324,27 @@ std::vector<KantoStep> pathfind_route(
             if (bg == best_g.end() || new_g < bg->second){
                 best_g[k] = new_g;
                 came_from[k] = {cur.x, cur.y, n.step};
+                open.push({nx, ny, new_g, new_g + manhattan(nx, ny)});
+            }
+        }
+
+        //  Ledge hop: one press of South carries the player over the ledge tile
+        //  and onto the ground two rows down. This is the ONLY way through a
+        //  ledge, and it only goes one way -- walking north from below lands on
+        //  the ledge tile, which walkable() rejects, so the asymmetry falls out
+        //  for free rather than needing a rule.
+        int landing_y = 0;
+        if (kanto_ledge_hop_target(cur.x, cur.y, &landing_y) &&
+            !kanto_edge_blocked(cur.x, cur.y, KantoStep::South)
+        ){
+            const int nx = cur.x;
+            const int ny = landing_y;
+            const int new_g = cur.g + 1;
+            const uint32_t k = key(nx, ny);
+            auto bg = best_g.find(k);
+            if (bg == best_g.end() || new_g < bg->second){
+                best_g[k] = new_g;
+                came_from[k] = {cur.x, cur.y, KantoStep::South};
                 open.push({nx, ny, new_g, new_g + manhattan(nx, ny)});
             }
         }

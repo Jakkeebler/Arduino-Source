@@ -45,6 +45,18 @@ std::optional<KantoStep> kanto_pathfind_next_run(
 
 bool kanto_tile_walkable(int tile_x, int tile_y);
 
+//  Gen 3 ledges are one-way: a single press of South carries the player over the
+//  ledge tile and onto the ground two rows below, and there is no way back up.
+//  Detected by exact tile matching against the combined map (see
+//  PokemonFRLG_KantoLedges_Generated.h) -- 678 of them across Kanto.
+//
+//  A ledge tile is never walkable; the hop is a distinct move in the search.
+bool kanto_is_ledge_south(int tile_x, int tile_y);
+
+//  True when standing at (tile_x, tile_y) and pressing South would hop a ledge.
+//  Writes the landing row to landing_y when it returns true.
+bool kanto_ledge_hop_target(int tile_x, int tile_y, int* landing_y);
+
 //  Runtime map learning. Process-lifetime only -- nothing is persisted to disk.
 //
 //  Two distinct facts, which must not be conflated:
