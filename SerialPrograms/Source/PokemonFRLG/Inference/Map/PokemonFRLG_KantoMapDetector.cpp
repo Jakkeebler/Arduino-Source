@@ -70,22 +70,46 @@ constexpr const char* MAP_RELATIVE_PATH = "PokemonFRLG/Maps/Kanto-Combined.png";
 //      tile changed every poll even while the player stood still.
 //  Anchoring on the *center* of the player's tile instead (row 4 -> 72 px)
 //  leaves +-8 px of slack before the quantized row can change.
-//  NEEDS ONE EMPIRICAL CHECK: PLAYER_TILE_ROW is 4 or 5 depending on where FRLG
-//  actually draws the player in the 10-row viewport, and this file cannot tell you
-//  which. Run the "Kanto Map Position Test" program while standing on a tile you
-//  can identify on Kanto-Combined.png. If the logged row is consistently one
-//  MORE than the truth, set this to 5; consistently one less, set it to 3.
-//  Everything else here is correct either way -- this is a single-line
-//  calibration, and it is the only value in this change that was not derivable
-//  from the code.
+//  EMPIRICAL ANSWER (2026-08-21) to the old "is the row 4 or 5?" question: it
+//  is NEITHER -- it is 4.5. FRLG's camera offsets the tile grid half a tile
+//  vertically: the screen shows the bottom half of one map row at the top and
+//  the top half of another at the bottom, and the player's tile occupies
+//  screen pixels y = 72..87, centred at 80.
 //
-//  (Column 7 is certain: 15 columns, player centred, 0-indexed centre = 7.)
+//  Measured, not inferred. Replaying the matcher offline on two error-report
+//  screenshots (Scripts/PokemonFRLG/kanto_replay_match.py):
+//
+//    20260821-110714847782: full-map peak at top-left (528, 3208), conf 0.987,
+//      unambiguous (runner-up 0.696). The screenshot shows the player standing
+//      IN the Route 22 ledge gap -- ledge band level with them on both sides --
+//      which is tile (40,205) on the map. (3208 + 80)/16 = 205.5 -> row 205.
+//      The old anchor gave (3208 + 72)/16 = 205.0 -- the exact 204/205
+//      boundary, which sub-pixel refinement consistently tipped to 204.
+//    20260821-092552123318: peak (608, 3224) -> (45,206) with the new anchor,
+//      matching that screenshot exactly (sand path, mountain hard east).
+//
+//  The old 72.0 made every reported row ONE NORTH OF TRUTH, knife-edged on the
+//  tile boundary. Consequence chain on Route 22: player walks north into the
+//  ledge gap (true row 205, reported 204); A* consults the mask at row 204
+//  where east is open grass; the game blocks east because east of the gap is a
+//  ledge tile at (41,205); the navigator concludes the MAP is wrong and either
+//  learns a false edge that seals the region (run 09:25) or refuses to and
+//  loops forever (run 11:01). Both were the calibration, not the map and not
+//  the localizer -- the 0.987 fixes were correct in x and self-consistently
+//  half-a-tile off in y.
+//
+//  (Column 7 is exact: 15 columns, player centred, 0-indexed centre = 7, and
+//  there is no horizontal half-tile offset -- peak x always lands mid-tile.)
 constexpr int PLAYER_TILE_COL = 7;
+//  Whole-tile row used only for hint-window placement and void-fraction
+//  estimates, where half a tile is inside every tolerance.
 constexpr int PLAYER_TILE_ROW = 4;
 static_assert(PLAYER_TILE_COL < VIEWPORT_W_TILES, "player anchor outside viewport");
 static_assert(PLAYER_TILE_ROW < VIEWPORT_H_TILES, "player anchor outside viewport");
 constexpr double PLAYER_ANCHOR_PX_X = PLAYER_TILE_COL * TILE_PX + TILE_PX / 2.0;  //  120.0
-constexpr double PLAYER_ANCHOR_PX_Y = PLAYER_TILE_ROW * TILE_PX + TILE_PX / 2.0;  //   72.0
+//  NOT row*16+8: the half-tile camera offset puts the player's tile centre at
+//  80 px, not 72. See the calibration note above before "simplifying" this.
+constexpr double PLAYER_ANCHOR_PX_Y = PLAYER_TILE_ROW * TILE_PX + TILE_PX;        //   80.0
 
 //  Ambiguity rejection: when measuring the second-best correlation peak, ignore
 //  everything within this radius of the best peak (that area is the same peak's
