@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <vector>
 #include "PokemonFRLG_KantoLedges_Generated.h"
+#include "PokemonFRLG_KantoMaskCorrections_Generated.h"
 #include "PokemonFRLG_KantoMapMasks_Generated.h"
 #include "PokemonFRLG_KantoMapPathfinder.h"
 
@@ -187,6 +188,25 @@ bool walkable(int x, int y){
     for (const MaskOverride& o : MASK_OVERRIDES){
         if (x >= o.x0 && x <= o.x1 && y >= o.y0 && y <= o.y1){
             return o.walkable;
+        }
+    }
+    //  Per-tile mask corrections.
+    //
+    //  The generated mask is perfectly consistent per tile identity -- all 1791
+    //  distinct tiles are classified unanimously across all 163,200 cells -- so
+    //  every mask error is a per-TILE error. Three tiles were classified
+    //  walkable that are not: two tree-canopy tiles and the mountain rock face.
+    //  Correcting them fixes 4,424 cells across all of Kanto, rather than the
+    //  handful we happened to crash into.
+    {
+        const uint32_t k = (uint32_t)(y * KANTO_CORRECTION_COLS + x);
+        if (std::binary_search(
+                KANTO_FORCE_BLOCKED,
+                KANTO_FORCE_BLOCKED + KANTO_FORCE_BLOCKED_COUNT,
+                k
+            )
+        ){
+            return false;
         }
     }
     return KANTO_MASK[y][x] == WALKABLE_CODE;
