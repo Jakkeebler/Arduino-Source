@@ -223,6 +223,10 @@ void kanto_mark_edge_blocked(int tile_x, int tile_y, KantoStep dir){
     std::lock_guard<std::mutex> lg(g_learned_lock);
     g_learned_edges.insert(edge_key(tile_x, tile_y, dir));
 }
+void kanto_unmark_edge_blocked(int tile_x, int tile_y, KantoStep dir){
+    std::lock_guard<std::mutex> lg(g_learned_lock);
+    g_learned_edges.erase(edge_key(tile_x, tile_y, dir));
+}
 bool kanto_edge_blocked(int tile_x, int tile_y, KantoStep dir){
     std::lock_guard<std::mutex> lg(g_learned_lock);
     return g_learned_edges.find(edge_key(tile_x, tile_y, dir)) != g_learned_edges.end();

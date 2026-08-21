@@ -298,6 +298,44 @@ static void kanto_navigate_impl(
     //  Log the unrendered-map compensation once per navigation run, not per poll.
     bool void_reported = false;
 
+    //  Would closing this edge cut us off from the goal entirely?
+    //
+    //  Learning is only ever as good as the position fix behind it, and a wrong
+    //  fix turns into a permanent hole in the map. Observed 2026-08-21 on Route
+    //  22: a burst of five east across open grass was reported as no movement --
+    //  the terrain there is repetitive enough that the fix matched the tile the
+    //  burst STARTED on. The navigator concluded east was a wall, recorded it,
+    //  and that single false edge sealed the only corridor out of the Route 22
+    //  grass. The region went from 2,625 reachable tiles to 520, with the Poke
+    //  Center on the wrong side of it.
+    //
+    //  So: never learn a fact that strands us. If the goal was reachable before
+    //  and is not after, the fix is more likely wrong than the map, and the
+    //  right response is to re-localize rather than to believe it.
+    auto edge_would_strand_us = [&](int x, int y, KantoStep dir) -> bool {
+        const bool reachable_before =
+            kanto_pathfind_next_step(x, y, goal.tile_x, goal.tile_y).has_value();
+        if (!reachable_before){
+            //  Already could not plan from here; this edge is not what broke it.
+            return false;
+        }
+        kanto_mark_edge_blocked(x, y, dir);
+        const bool reachable_after =
+            kanto_pathfind_next_step(x, y, goal.tile_x, goal.tile_y).has_value();
+        kanto_unmark_edge_blocked(x, y, dir);
+        if (reachable_after){
+            return false;
+        }
+        env.log(
+            "Refusing to close " + std::string(kanto_step_name(dir)) + " from (" +
+                std::to_string(x) + "," + std::to_string(y) + "): it is the only way "
+                "to the goal, so the position fix is more likely wrong than the map. "
+                "Re-localizing from the full map.",
+            COLOR_RED
+        );
+        return true;
+    };
+
     //  Flee an encounter found mid-navigation and mark the step interrupted.
     //  Shared by the pre-locate battle gate and the unknown-position probe.
     auto flee_encounter = [&](const std::string& why){
@@ -631,6 +669,17 @@ static void kanto_navigate_impl(
                             "), which is already a known wall.",
                         COLOR_RED
                     );
+                }else if (edge_would_strand_us(pos->tile_x, pos->tile_y, tried)){
+                    //  Distrust the fix, not the map. Throw away the hint chain
+                    //  so the next poll pays for a cold full-map match, which is
+                    //  the only kind that can disagree with a wrong hint.
+                    have_prev_pos = false;
+                    hint_x = -999;
+                    hint_y = -999;
+                    hint_radius = HINT_RADIUS_TILES;
+                    tiles_in_flight = 1;
+                    rejected_jumps = 0;
+                    no_progress_count = 0;
                 }else if (learned_blocks < MAX_LEARNED_BLOCKS_PER_NAVIGATION){
                     //  Record the EDGE, not the destination tile.
                     //

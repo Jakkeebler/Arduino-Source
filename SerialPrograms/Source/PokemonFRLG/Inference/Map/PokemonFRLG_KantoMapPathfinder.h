@@ -69,6 +69,7 @@ bool kanto_ledge_hop_target(int tile_x, int tile_y, int* landing_y);
 //      nothing about whether the tile to the north is walkable.
 void kanto_mark_tile_walkable(int tile_x, int tile_y);
 void kanto_mark_edge_blocked(int tile_x, int tile_y, KantoStep dir);
+void kanto_unmark_edge_blocked(int tile_x, int tile_y, KantoStep dir);
 bool kanto_edge_blocked(int tile_x, int tile_y, KantoStep dir);
 void kanto_clear_learned();
 size_t kanto_learned_edge_count();
