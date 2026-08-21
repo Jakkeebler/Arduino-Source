@@ -297,6 +297,11 @@ static void kanto_navigate_impl(
     int blocked_start_escapes = 0;
     //  Log the unrendered-map compensation once per navigation run, not per poll.
     bool void_reported = false;
+    //  Tile at which we have already paid for a cold, unhinted confirmation of a
+    //  stall. (-1,-1) means "no stall confirmed", and it is cleared the moment we
+    //  stand somewhere else. See the cold-confirm block in the no-progress path.
+    int stall_confirmed_x = -1;
+    int stall_confirmed_y = -1;
 
     //  Would closing this edge cut us off from the goal entirely?
     //
@@ -640,6 +645,51 @@ static void kanto_navigate_impl(
             prev_step_was_turn = false;
             prev_step_interrupted = false;
         }else if (didnt_move){
+            //  Before believing the map is wrong, confirm where we are.
+            //
+            //  "The player did not move" has two explanations, and a hinted fix
+            //  cannot tell them apart: the hint is anchored to the very position
+            //  we are doubting, so a fix that agrees with it is not independent
+            //  evidence. Either the tile ahead is solid, or we are not where we
+            //  think we are and the press moved us somewhere the hint window
+            //  never looked.
+            //
+            //  Observed 2026-08-21 on Route 22: the navigator reported (40,204)
+            //  on four polls running while pressing east across what the map
+            //  correctly calls open grass -- rows 204-208 there are long runs of
+            //  two alternating sand tiles, which is about the worst case a
+            //  hinted template match can be handed. It concluded "east from
+            //  (40,204) is a wall". That single false edge is the only corridor
+            //  out of the Route 22 grass: reachability fell from 2,625 tiles to
+            //  nothing, escape mode then wandered into an 11-tile pocket below
+            //  the ledge, and the run died 190 steps later.
+            //
+            //  So: the first time we stall on a tile, throw away the hint chain
+            //  and pay for one cold full-map match. It costs a couple of seconds
+            //  and it is the only fix that had a chance to disagree. Only if the
+            //  cold fix puts us back on the same tile do we start counting
+            //  toward learning anything about the map.
+            if (pos->tile_x != stall_confirmed_x || pos->tile_y != stall_confirmed_y){
+                stall_confirmed_x = pos->tile_x;
+                stall_confirmed_y = pos->tile_y;
+                env.log(
+                    "No movement at (" + std::to_string(pos->tile_x) + "," +
+                        std::to_string(pos->tile_y) + "). Confirming the position with a "
+                        "cold full-map fix before blaming the map.",
+                    COLOR_YELLOW
+                );
+                have_prev_pos = false;
+                hint_x = -999;
+                hint_y = -999;
+                hint_radius = HINT_RADIUS_TILES;
+                tiles_in_flight = 1;
+                rejected_jumps = 0;
+                no_progress_count = 0;
+                kanto_mark_tile_walkable(pos->tile_x, pos->tile_y);
+                context.wait_for(std::chrono::milliseconds(150));
+                continue;
+            }
+
             no_progress_count++;
 
             //  Learn the obstacle rather than dying on it.
@@ -721,6 +771,13 @@ static void kanto_navigate_impl(
             }
         }else{
             no_progress_count = 0;
+            //  We moved, so whatever stall we last confirmed is over. Clearing
+            //  it means a later stall on this same tile pays for its own cold
+            //  fix rather than inheriting a confirmation from minutes ago.
+            if (pos->tile_x != stall_confirmed_x || pos->tile_y != stall_confirmed_y){
+                stall_confirmed_x = -1;
+                stall_confirmed_y = -1;
+            }
         }
         //  We are standing here, so this tile is walkable -- whatever the
         //  generated mask says about it. This is the single most reliable fact
@@ -886,6 +943,37 @@ static void kanto_navigate_impl(
                     );
                 }
                 context.wait_for(std::chrono::milliseconds(400));
+                continue;
+            }
+
+            //  Before escaping, suspect ourselves.
+            //
+            //  The static map is one connected component around every goal we
+            //  navigate to -- 2,625 mutually reachable tiles covering Route 1,
+            //  Route 22, Viridian and the Poke Center, verified by flood fill on
+            //  2026-08-21. So if A* cannot plan and we have learned edges this
+            //  trip, the overwhelmingly likely cause is that one of those edges
+            //  is wrong, not that the goal became unreachable.
+            //
+            //  Learned edges are cheap to re-earn -- walking into a real wall
+            //  costs three presses -- and ruinously expensive to keep when
+            //  wrong: on 2026-08-21 one false edge on Route 22 turned a 47-step
+            //  route into escape mode, which then spent 190 steps circling an
+            //  11-tile pocket. Throw them away and let A* try again.
+            if (learned_blocks > 0){
+                env.log(
+                    "A* cannot plan and we have learned " + std::to_string(learned_blocks) +
+                        " edge(s) this trip. The map is connected here, so a learned "
+                        "edge is more likely wrong than the goal unreachable -- "
+                        "forgetting them and re-planning.",
+                    COLOR_YELLOW
+                );
+                kanto_clear_learned_edges();
+                learned_blocks = 0;
+                astar_failures = 0;
+                escape_visited.clear();
+                have_prev_pos = false;
+                context.wait_for(std::chrono::milliseconds(200));
                 continue;
             }
 

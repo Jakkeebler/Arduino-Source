@@ -72,6 +72,8 @@ void kanto_mark_edge_blocked(int tile_x, int tile_y, KantoStep dir);
 void kanto_unmark_edge_blocked(int tile_x, int tile_y, KantoStep dir);
 bool kanto_edge_blocked(int tile_x, int tile_y, KantoStep dir);
 void kanto_clear_learned();
+//  Forget learned edges only, keeping tiles proved walkable by standing on them.
+void kanto_clear_learned_edges();
 size_t kanto_learned_edge_count();
 
 }

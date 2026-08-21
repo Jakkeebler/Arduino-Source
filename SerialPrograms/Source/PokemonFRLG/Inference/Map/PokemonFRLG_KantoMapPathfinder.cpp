@@ -236,6 +236,15 @@ void kanto_clear_learned(){
     g_learned_walkable.clear();
     g_learned_edges.clear();
 }
+//  Forget only the edges, keeping the tiles we have proved walkable by standing
+//  on them. The two kinds of fact are not equally trustworthy: standing on a
+//  tile is direct evidence, whereas "I could not move that way" is an inference
+//  from a position fix and inherits every error in it. When A* stops being able
+//  to plan, the edges are the suspects -- the tiles are not.
+void kanto_clear_learned_edges(){
+    std::lock_guard<std::mutex> lg(g_learned_lock);
+    g_learned_edges.clear();
+}
 size_t kanto_learned_edge_count(){
     std::lock_guard<std::mutex> lg(g_learned_lock);
     return g_learned_edges.size();
