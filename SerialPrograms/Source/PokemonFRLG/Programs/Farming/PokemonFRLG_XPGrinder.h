@@ -87,6 +87,7 @@ private:
     BooleanCheckBoxOption STOP_WHEN_TEAM_COMPLETE;
     XpGrinderTeamTable TEAM_TABLE;
 
+    BooleanCheckBoxOption HEAL_BEFORE_START;
     BooleanCheckBoxOption HEAL_ON_FAINT;
     BooleanCheckBoxOption HEAL_ON_OUT_OF_PP;
     SimpleIntegerOption<uint64_t> BATTLES_PER_HEAL_TRIP;

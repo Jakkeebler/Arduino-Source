@@ -218,6 +218,11 @@ XPGrinder::XPGrinder()
         false
     )
     , TEAM_TABLE()
+    , HEAL_BEFORE_START(
+        "<b>Heal before grinding:</b><br>Take a heal trip before the first encounter. Use this when the previous run may have left the party short on HP or PP -- without it, grinding starts on whatever state the party was abandoned in, and the first fighter can be dry from the moment it is sent out.",
+        LockMode::LOCK_WHILE_RUNNING,
+        false
+    )
     , HEAL_ON_FAINT(
         "<b>Heal on faint:</b><br>When the lead party faints, accept the whiteout and resume grinding instead of stopping. The game will warp you to the last visited Pokemon Center and fully heal the party automatically.",
         LockMode::LOCK_WHILE_RUNNING,
@@ -281,6 +286,7 @@ XPGrinder::XPGrinder()
     PA_ADD_OPTION(HOLD_EVOLUTION_FOR_MOVES);
     PA_ADD_OPTION(STOP_WHEN_TEAM_COMPLETE);
     PA_ADD_OPTION(TEAM_TABLE);
+    PA_ADD_OPTION(HEAL_BEFORE_START);
     PA_ADD_OPTION(HEAL_ON_FAINT);
     PA_ADD_OPTION(HEAL_ON_OUT_OF_PP);
     PA_ADD_OPTION(BATTLES_PER_HEAL_TRIP);
@@ -578,14 +584,28 @@ struct PartyState{
     //
     //  Returns the first alive fighter's rotation index, or -1 when every
     //  fighter is down and only the trainee is left standing.
-    int next_alive_fighter() const{
+    //  skip_out_of_pp: also skip fighters whose moves are spent. A fighter with
+    //  no PP does not fail gracefully -- it Struggles, takes recoil, and faints,
+    //  which is how a party grinds itself down. Prefer one that can still fight.
+    int next_alive_fighter(bool skip_out_of_pp = false) const{
         for (int i = 1; i < party_size; i++){
-            if (!fainted[i]) return i;
+            if (fainted[i]) continue;
+            if (skip_out_of_pp && out_of_pp[i]) continue;
+            return i;
         }
         return -1;
     }
     bool only_trainee_left() const{
         return next_alive_fighter() < 0;
+    }
+    //  True when no fighter can still put out damage -- everything is either
+    //  fainted or spent. This, not all_need_heal(), is the switch-training heal
+    //  condition: all_need_heal() waits for the TRAINEE to be down too, and the
+    //  trainee is withdrawn before it ever acts, so it never faints and never
+    //  spends PP. The condition could not fire, and the fighters kept going
+    //  until they Struggled themselves to death.
+    bool all_fighters_spent() const{
+        return next_alive_fighter(/*skip_out_of_pp=*/true) < 0;
     }
 
     //  True when every slot needs healing (all fainted, or all PP-exhausted in pp_exhaustion mode).
@@ -930,6 +950,35 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         return;
     }
 
+    //  Optional heal before the first encounter.
+    //
+    //  A run inherits whatever state the previous one was abandoned in. On
+    //  2026-08-20 a run started with the fighter already dry and hit Out of PP
+    //  on its very first encounter. routine_heal_trip() walks to the Center,
+    //  heals, and walks back to the grind spot, so it doubles as the trip out --
+    //  no separate navigation is needed afterwards.
+    bool started_at_grind_spot = false;
+    if (HEAL_BEFORE_START){
+        env.log("Heal before grinding: taking a heal trip before the first encounter.", COLOR_BLUE);
+        try{
+            routine_heal_trip(
+                env, context, TRAVEL_METHOD, grind_location, heal_location,
+                [&]{ party.on_healed(); }
+            );
+            stats.healing_trips++;
+            env.update_stats();
+            started_at_grind_spot = true;
+        }catch (const OperationFailedException& e){
+            OperationFailedException::fire(
+                ErrorReport::SEND_ERROR_REPORT,
+                "Could not complete the heal trip before grinding: " + e.message() +
+                    "  Start the program somewhere the navigator can reach the Pokemon Center "
+                    "from, or turn off \"Heal before grinding\".",
+                env.console
+            );
+        }
+    }
+
     //  Start-of-run navigation.
     //
     //  Every other kanto_navigate_to() call in this program recovers a *known*
@@ -938,7 +987,7 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
     //  in the grass. Starting anywhere else meant grass_spin() spun on dry land
     //  until the failed-encounter guard killed the run, with nothing in the log
     //  to say why.
-    if (NAVIGATE_TO_GRIND_ON_START){
+    if (NAVIGATE_TO_GRIND_ON_START && !started_at_grind_spot){
         env.log("Navigating to the grind location before the first encounter.", COLOR_BLUE);
         try{
             kanto_navigate_to(env, context, goal_for_grind_location(grind_location));
@@ -1063,12 +1112,22 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                 //  Party order is never touched in this mode, so rotation index i
                 //  is always game slot i+1 and we can reason in raw slots.
                 int fighter_slot = (int)(uint64_t)FIGHTER_SLOT;
-                if (fighter_slot > party.party_size || party.fainted[fighter_slot - 1]){
-                    //  The configured fighter is down. Fall forward to the next
-                    //  healthy Pokemon that is not the trainee rather than trying
-                    //  to send out a KO'd one -- that is what wedged the party
-                    //  screen on 8/19.
-                    const int replacement_rotation = party.next_alive_fighter();
+                if (fighter_slot > party.party_size ||
+                    party.fainted[fighter_slot - 1] ||
+                    party.out_of_pp[fighter_slot - 1]
+                ){
+                    //  The configured fighter is down or spent. Fall forward to a
+                    //  fighter that can still fight, rather than sending out a
+                    //  KO'd one -- which wedged the party screen on 8/19 -- or a
+                    //  dry one, which just Struggles itself to death.
+                    //
+                    //  Prefer one with PP; settle for one that is merely alive if
+                    //  every fighter is dry, because being out of PP still beats
+                    //  putting the trainee in front of a wild Pokemon.
+                    int replacement_rotation = party.next_alive_fighter(/*skip_out_of_pp=*/true);
+                    if (replacement_rotation < 0){
+                        replacement_rotation = party.next_alive_fighter();
+                    }
                     const int replacement = replacement_rotation < 0
                         ? -1
                         : replacement_rotation + 1;
@@ -1083,12 +1142,17 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                     fighter_slot = replacement;
                 }
 
-                if (fighter_slot < 2){
-                    //  Every fighter is fainted and only the trainee is left. A
-                    //  level 5 Magikarp cannot win this battle -- it can only lose
-                    //  it -- so run and heal instead of feeding it to the grass.
+                if (fighter_slot < 2 || party.all_fighters_spent()){
+                    //  Either every fighter is fainted and only the trainee is
+                    //  left -- a level 5 Magikarp cannot win this battle, it can
+                    //  only lose it -- or every fighter is out of PP, in which
+                    //  case the best any of them can do is Struggle itself down
+                    //  to a faint. Both are worth a heal trip; neither is worth
+                    //  fighting through.
                     env.log(
-                        "Switch training: no healthy fighter left in the party. Fleeing and taking a heal trip.",
+                        fighter_slot < 2
+                            ? "Switch training: no healthy fighter left in the party. Fleeing and taking a heal trip."
+                            : "Switch training: every fighter is out of PP. Fleeing and taking a heal trip.",
                         COLOR_RED
                     );
                     flee_battle(env.console, context);
@@ -1486,6 +1550,25 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                     stats.out_of_pp++;
                     party.out_of_pp[party.current_rotation] = true;
                     env.update_stats();
+
+                    //  Switch training keeps the party order fixed, so it does not
+                    //  rotate the lead -- it just picks a different fighter to
+                    //  swap in next battle. Nothing to do here beyond recording
+                    //  that this one is spent, as long as another fighter can
+                    //  still fight. A heal trip for one drained Pokemon while
+                    //  four healthy ones sit in the party is minutes wasted:
+                    //  on 2026-08-20 that pattern cost 11 round trips.
+                    if (ROTATION_MODE == RotationMode::switch_training &&
+                        multi_party && !party.all_fighters_spent()
+                    ){
+                        env.log(
+                            "Switch training: slot " + std::to_string(party.current_rotation + 1) +
+                                " is out of PP. Using another fighter from the next battle.",
+                            COLOR_BLUE
+                        );
+                        battle_ongoing = false;
+                        break;
+                    }
 
                     const int next_with_pp =
                         (multi_party && ROTATION_MODE == RotationMode::pp_exhaustion && !party.all_need_heal(true))
