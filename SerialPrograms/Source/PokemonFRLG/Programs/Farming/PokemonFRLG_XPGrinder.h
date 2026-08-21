@@ -10,6 +10,7 @@
 #include "Common/Cpp/Options/SimpleIntegerOption.h"
 #include "Common/Cpp/Options/BooleanCheckBoxOption.h"
 #include "Common/Cpp/Options/EnumDropdownOption.h"
+#include "Common/Cpp/Options/GroupOption.h"
 #include "Common/Cpp/Options/StringOption.h"
 #include "Common/Cpp/Options/ButtonOption.h"
 #include "CommonFramework/Notifications/EventNotificationsTable.h"
@@ -98,6 +99,19 @@ private:
     EventNotificationOption NOTIFICATION_SHINY;
     EventNotificationOption NOTIFICATION_STATUS_UPDATE;
     EventNotificationsOption NOTIFICATIONS;
+
+    //  Presentation only.
+    //
+    //  These own nothing -- every option above stays exactly where it is, and the
+    //  groups just claim them at registration time via add_option(). That keeps
+    //  the panel readable without renaming the several hundred references to
+    //  these options in the .cpp.
+    //
+    //  Declared last so the constructor's initializer list order stays valid.
+    GroupOption GRIND_SETUP;
+    GroupOption PARTY_SETUP;
+    GroupOption HEALING;
+    GroupOption TEAM_SETUP;
 };
 
 }

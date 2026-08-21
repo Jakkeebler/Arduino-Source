@@ -266,31 +266,75 @@ XPGrinder::XPGrinder()
         &NOTIFICATION_PROGRAM_FINISH,
         &NOTIFICATION_ERROR_FATAL,
     })
+    , GRIND_SETUP(
+        "<b>Where to grind</b>",
+        LockMode::LOCK_WHILE_RUNNING,
+        GroupOption::EnableMode::ALWAYS_ENABLED,
+        false, /*default_expanded=*/true
+    )
+    , PARTY_SETUP(
+        "<b>Party and rotation</b>",
+        LockMode::LOCK_WHILE_RUNNING,
+        GroupOption::EnableMode::ALWAYS_ENABLED,
+        false, /*default_expanded=*/true
+    )
+    , HEALING(
+        "<b>Healing and travel</b>",
+        LockMode::LOCK_WHILE_RUNNING,
+        GroupOption::EnableMode::ALWAYS_ENABLED,
+        false, /*default_expanded=*/false
+    )
+    , TEAM_SETUP(
+        "<b>Team and move learning</b>",
+        LockMode::LOCK_WHILE_RUNNING,
+        GroupOption::EnableMode::ALWAYS_ENABLED,
+        false, /*default_expanded=*/false
+    )
 {
+    //  Panel layout.
+    //
+    //  The options themselves are plain members of this class, unchanged; the
+    //  groups only claim them here. add_option() is what PA_ADD_OPTION expands
+    //  to, so registering into a group instead of into the panel costs nothing
+    //  and leaves every reference to these options elsewhere in this file alone.
+    //
+    //  Serialization keys become nested under the group name, which is why
+    //  SerialPrograms-Settings.json needs the matching one-time migration.
+
+    //  Run limits stay at the top: they are what you reach for most often.
     PA_ADD_OPTION(MAX_BATTLES);
     PA_ADD_OPTION(PREVENT_EVOLUTION);
     PA_ADD_OPTION(IGNORE_SHINIES);
-    PA_ADD_OPTION(GRIND_LOCATION);
-    PA_ADD_OPTION(NAVIGATE_TO_GRIND_ON_START);
-    PA_ADD_OPTION(AUTO_HEAL_LOCATION);
-    PA_ADD_OPTION(HEAL_LOCATION);
-    PA_ADD_OPTION(ROTATION_MODE);
-    PA_ADD_OPTION(FIGHTER_SLOT);
-    PA_ADD_OPTION(PARTY_SIZE);
-    PA_ADD_OPTION(LANGUAGE);
-    PA_ADD_OPTION(AUTO_SCAN_ON_START);
-    PA_ADD_OPTION(IMPORT_TEAM_FILE);
-    PA_ADD_OPTION(IMPORT_TEAM_BUTTON);
-    PA_ADD_OPTION(AUTO_RANK_MOVES);
-    PA_ADD_OPTION(AUTOFILL_DESIRED_MOVES);
-    PA_ADD_OPTION(HOLD_EVOLUTION_FOR_MOVES);
-    PA_ADD_OPTION(STOP_WHEN_TEAM_COMPLETE);
-    PA_ADD_OPTION(TEAM_TABLE);
-    PA_ADD_OPTION(HEAL_BEFORE_START);
-    PA_ADD_OPTION(HEAL_ON_FAINT);
-    PA_ADD_OPTION(HEAL_ON_OUT_OF_PP);
-    PA_ADD_OPTION(BATTLES_PER_HEAL_TRIP);
-    PA_ADD_OPTION(TRAVEL_METHOD);
+
+    GRIND_SETUP.add_option(GRIND_LOCATION, "GRIND_LOCATION");
+    GRIND_SETUP.add_option(NAVIGATE_TO_GRIND_ON_START, "NAVIGATE_TO_GRIND_ON_START");
+    PA_ADD_OPTION(GRIND_SETUP);
+
+    PARTY_SETUP.add_option(ROTATION_MODE, "ROTATION_MODE");
+    PARTY_SETUP.add_option(FIGHTER_SLOT, "FIGHTER_SLOT");
+    PARTY_SETUP.add_option(PARTY_SIZE, "PARTY_SIZE");
+    PA_ADD_OPTION(PARTY_SETUP);
+
+    HEALING.add_option(AUTO_HEAL_LOCATION, "AUTO_HEAL_LOCATION");
+    HEALING.add_option(HEAL_LOCATION, "HEAL_LOCATION");
+    HEALING.add_option(TRAVEL_METHOD, "TRAVEL_METHOD");
+    HEALING.add_option(HEAL_BEFORE_START, "HEAL_BEFORE_START");
+    HEALING.add_option(HEAL_ON_FAINT, "HEAL_ON_FAINT");
+    HEALING.add_option(HEAL_ON_OUT_OF_PP, "HEAL_ON_OUT_OF_PP");
+    HEALING.add_option(BATTLES_PER_HEAL_TRIP, "BATTLES_PER_HEAL_TRIP");
+    PA_ADD_OPTION(HEALING);
+
+    TEAM_SETUP.add_option(LANGUAGE, "LANGUAGE");
+    TEAM_SETUP.add_option(AUTO_SCAN_ON_START, "AUTO_SCAN_ON_START");
+    TEAM_SETUP.add_option(IMPORT_TEAM_FILE, "IMPORT_TEAM_FILE");
+    TEAM_SETUP.add_option(IMPORT_TEAM_BUTTON, "IMPORT_TEAM_BUTTON");
+    TEAM_SETUP.add_option(AUTO_RANK_MOVES, "AUTO_RANK_MOVES");
+    TEAM_SETUP.add_option(AUTOFILL_DESIRED_MOVES, "AUTOFILL_DESIRED_MOVES");
+    TEAM_SETUP.add_option(HOLD_EVOLUTION_FOR_MOVES, "HOLD_EVOLUTION_FOR_MOVES");
+    TEAM_SETUP.add_option(STOP_WHEN_TEAM_COMPLETE, "STOP_WHEN_TEAM_COMPLETE");
+    TEAM_SETUP.add_option(TEAM_TABLE, "TEAM_TABLE");
+    PA_ADD_OPTION(TEAM_SETUP);
+
     PA_ADD_OPTION(TAKE_VIDEO);
     PA_ADD_OPTION(GO_HOME_WHEN_DONE);
     PA_ADD_OPTION(NOTIFICATIONS);
