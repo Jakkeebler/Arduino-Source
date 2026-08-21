@@ -484,12 +484,18 @@ void whiteout_resume(
 
 //  See whiteout_resume: `on_healed` fires right after heal_at_pokecenter, not at
 //  the end of the trip.
+//  at_grind_spot: whether the caller knows the player is standing on the grind
+//  tile right now. True for every mid-run heal trip -- we have been spinning
+//  there for the last N battles. False at program start, where the player is
+//  wherever the last run left them, and seeding the grind spot is a lie that
+//  costs more than a cold fix ever would (see phase 1).
 void routine_heal_trip(
     SingleSwitchProgramEnvironment& env, ProControllerContext& context,
     XPGrinder::TravelMethod travel,
     GrindLocationId grind_location,
     HealLocationId heal_location,
-    const std::function<void()>& on_healed
+    const std::function<void()>& on_healed,
+    bool at_grind_spot = true
 ){
     env.log(std::string("Heal trip phase 1: traveling to the Pokemon Center via ") + travel_method_string(travel) + ".", COLOR_BLUE);
     switch (travel){
@@ -501,15 +507,31 @@ void routine_heal_trip(
         use_teleport_from_overworld(env.console, context);
         break;
     case XPGrinder::TravelMethod::walk:
-        //  We have been spinning on the grind tile for the last N battles, so
-        //  that is where we are. Seeding it keeps the first fix out of the
-        //  ambiguity gate -- a cold match in the middle of a uniform grass field
-        //  fails every time (observed 8/18: 16 straight "Position unknown").
-        kanto_navigate_to(
-            env, context,
-            pc_entrance_for_heal_location(heal_location),
-            goal_for_grind_location(grind_location)
-        );
+        if (at_grind_spot){
+            //  We have been spinning on the grind tile for the last N battles, so
+            //  that is where we are. Seeding it keeps the first fix out of the
+            //  ambiguity gate -- a cold match in the middle of a uniform grass field
+            //  fails every time (observed 8/18: 16 straight "Position unknown").
+            kanto_navigate_to(
+                env, context,
+                pc_entrance_for_heal_location(heal_location),
+                goal_for_grind_location(grind_location)
+            );
+        }else{
+            //  Program start: we have no idea where the player is, so pay for a
+            //  cold fix rather than asserting one.
+            //
+            //  Seeding here was actively harmful. On 2026-08-21 the grind spot
+            //  was Route 2 but the previous run had left the player on Route 22.
+            //  The seeded window produced a 0.401 match 47 tiles from the truth,
+            //  the navigator walked five tiles on it, then spent three rejected
+            //  jumps and ~20 s discovering that the real position -- available at
+            //  conf 0.982 the whole time -- was somewhere else entirely.
+            kanto_navigate_to(
+                env, context,
+                pc_entrance_for_heal_location(heal_location)
+            );
+        }
         break;
     }
     env.log("Heal trip phase 2: entering PC, healing party, leaving PC.", COLOR_BLUE);
@@ -1007,7 +1029,8 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         try{
             routine_heal_trip(
                 env, context, TRAVEL_METHOD, grind_location, heal_location,
-                [&]{ party.on_healed(); }
+                [&]{ party.on_healed(); },
+                /*at_grind_spot=*/false
             );
             stats.healing_trips++;
             env.update_stats();
