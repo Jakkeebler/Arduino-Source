@@ -723,6 +723,16 @@ static void kanto_navigate_impl(
                     //  Distrust the fix, not the map. Throw away the hint chain
                     //  so the next poll pays for a cold full-map match, which is
                     //  the only kind that can disagree with a wrong hint.
+                    //
+                    //  The `continue` is load-bearing. Without it control falls
+                    //  through to the end of the loop body, which unconditionally
+                    //  does prev_x = pos->tile_x / have_prev_pos = true and puts
+                    //  the hint straight back. Shipped that way in df4d586f and
+                    //  it made the guard a no-op: the 09:40 run on 2026-08-21
+                    //  logged "Refusing to close east from (40,204) ...
+                    //  Re-localizing from the full map" and then reported
+                    //  (40,204) at conf 0.987 for every poll after it, because
+                    //  every one of those fixes was still hinted at (40,204).
                     have_prev_pos = false;
                     hint_x = -999;
                     hint_y = -999;
@@ -730,6 +740,9 @@ static void kanto_navigate_impl(
                     tiles_in_flight = 1;
                     rejected_jumps = 0;
                     no_progress_count = 0;
+                    kanto_mark_tile_walkable(pos->tile_x, pos->tile_y);
+                    context.wait_for(std::chrono::milliseconds(150));
+                    continue;
                 }else if (learned_blocks < MAX_LEARNED_BLOCKS_PER_NAVIGATION){
                     //  Record the EDGE, not the destination tile.
                     //
