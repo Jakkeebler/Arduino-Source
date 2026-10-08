@@ -114,6 +114,8 @@ XpGrinderTeamRow::XpGrinderTeamRow(EditableTableOption& parent_table)
         StringSelectCell(chain_move_db, LockMode::LOCK_WHILE_RUNNING, std::string("")),
     }
     , on_unknown(OnUnknownOffered_Database(), LockMode::LOCK_WHILE_RUNNING, OnUnknownOffered::Decline)
+    , evolution_policy(EvolutionPolicyType_Database(), LockMode::LOCK_WHILE_RUNNING, EvolutionPolicyType::LevelUp)
+    , evolution_stone(EvolutionStoneItem_Database(), LockMode::LOCK_WHILE_RUNNING, EvolutionStoneItem::None)
 {
     PA_ADD_OPTION(species);
     PA_ADD_OPTION(desired_move[0]);
@@ -121,6 +123,8 @@ XpGrinderTeamRow::XpGrinderTeamRow(EditableTableOption& parent_table)
     PA_ADD_OPTION(desired_move[2]);
     PA_ADD_OPTION(desired_move[3]);
     PA_ADD_OPTION(on_unknown);
+    PA_ADD_OPTION(evolution_policy);
+    PA_ADD_OPTION(evolution_stone);
 
     //  Cascading: when species changes, rebuild this row's move database so
     //  the four desired-move dropdowns only show moves the chain can learn.
@@ -180,6 +184,8 @@ std::unique_ptr<EditableTableRow> XpGrinderTeamRow::clone() const{
         }
     }
     ret->on_unknown.set(on_unknown);
+    ret->evolution_policy.set(evolution_policy);
+    ret->evolution_stone.set(evolution_stone);
     return ret;
 }
 
@@ -287,6 +293,8 @@ std::vector<std::string> XpGrinderTeamTable::make_header() const{
         "Desired Move 3",
         "Desired Move 4",
         "On Unknown",
+        "Evolution Policy",
+        "Evolution Stone",
     };
 }
 
@@ -314,6 +322,20 @@ OnUnknownOffered XpGrinderTeamTable::on_unknown_for(size_t pokemon) const{
         return OnUnknownOffered::Decline;
     }
     return table[pokemon]->on_unknown;
+}
+EvolutionPolicyType XpGrinderTeamTable::evolution_policy_for(size_t pokemon) const{
+    auto table = copy_snapshot();
+    if (pokemon >= table.size()){
+        return EvolutionPolicyType::LevelUp;
+    }
+    return table[pokemon]->evolution_policy;
+}
+EvolutionStoneItem XpGrinderTeamTable::evolution_stone_for(size_t pokemon) const{
+    auto table = copy_snapshot();
+    if (pokemon >= table.size()){
+        return EvolutionStoneItem::None;
+    }
+    return table[pokemon]->evolution_stone;
 }
 MoveLearnDecider XpGrinderTeamTable::make_decider(size_t pokemon) const{
     return MoveLearnDecider(desired_for(pokemon), on_unknown_for(pokemon));

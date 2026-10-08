@@ -18,6 +18,7 @@
 #include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_ForgetMoveScreen.h"
 #include "PokemonFRLG/Inference/PokemonFRLG_ShinySymbolDetector.h"
 #include "PokemonFRLG/Inference/PokemonFRLG_PartySummaryReader.h"
+#include "PokemonFRLG/Programs/Farming/PokemonFRLG_EvolutionPolicy.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnStateMachine.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MovePlan.h"
@@ -382,6 +383,46 @@ int test_pokemonFRLG_MoveLearnDecider(const std::string& test_file_path){
             return result;
         }
     }
+    return 0;
+}
+
+//  ---- Evolution policy (FRO-226) ----
+//
+//  Registered as "PokemonFRLG_EvolutionPolicy". Pure logic, no image/file
+//  data needed -- same "ignores test_file_path" pattern as the move-learn
+//  decider test above.
+
+int test_pokemonFRLG_EvolutionPolicy(const std::string& test_file_path){
+    //  All 4 policy types: whether an automatic (level-up dialog) evolution
+    //  must be blocked.
+    TEST_RESULT_EQUAL(policy_blocks_automatic_evolution(EvolutionPolicyType::LevelUp), false);
+    TEST_RESULT_EQUAL(policy_blocks_automatic_evolution(EvolutionPolicyType::Stone), true);
+    TEST_RESULT_EQUAL(policy_blocks_automatic_evolution(EvolutionPolicyType::Trade), true);
+    TEST_RESULT_EQUAL(policy_blocks_automatic_evolution(EvolutionPolicyType::Block), true);
+
+    //  Only Stone is the explicit-item-step policy.
+    TEST_RESULT_EQUAL(policy_uses_explicit_stone_step(EvolutionPolicyType::LevelUp), false);
+    TEST_RESULT_EQUAL(policy_uses_explicit_stone_step(EvolutionPolicyType::Stone), true);
+    TEST_RESULT_EQUAL(policy_uses_explicit_stone_step(EvolutionPolicyType::Trade), false);
+    TEST_RESULT_EQUAL(policy_uses_explicit_stone_step(EvolutionPolicyType::Block), false);
+
+    //  Pre-level-up guard: Block / Trade stop one level short (current_level+1
+    //  >= evolution_level); LevelUp and Stone never do; no level-up evolution
+    //  (<=0) never triggers it.
+    TEST_RESULT_EQUAL(should_stop_grind_before_blocked_evolution(EvolutionPolicyType::Block, 15, 16), true);   //  one level short
+    TEST_RESULT_EQUAL(should_stop_grind_before_blocked_evolution(EvolutionPolicyType::Block, 14, 16), false);  //  two levels short: not yet
+    TEST_RESULT_EQUAL(should_stop_grind_before_blocked_evolution(EvolutionPolicyType::Block, 16, 16), true);   //  already at it: still must not let it through
+    TEST_RESULT_EQUAL(should_stop_grind_before_blocked_evolution(EvolutionPolicyType::Trade, 15, 16), true);
+    TEST_RESULT_EQUAL(should_stop_grind_before_blocked_evolution(EvolutionPolicyType::LevelUp, 15, 16), false);
+    TEST_RESULT_EQUAL(should_stop_grind_before_blocked_evolution(EvolutionPolicyType::Stone, 15, 16), false);
+    TEST_RESULT_EQUAL(should_stop_grind_before_blocked_evolution(EvolutionPolicyType::Block, 15, 0), false);   //  no level-up evolution at all
+
+    //  Evolution stone item names round-trip through the dropdown database.
+    TEST_RESULT_EQUAL(evolution_stone_item_name(EvolutionStoneItem::None), std::string());
+    TEST_RESULT_EQUAL(evolution_stone_item_name(EvolutionStoneItem::FireStone), std::string("Fire Stone"));
+    TEST_RESULT_EQUAL(EvolutionPolicyType_Database().find(EvolutionPolicyType::Block) != nullptr, true);
+    TEST_RESULT_EQUAL(EvolutionStoneItem_Database().find(EvolutionStoneItem::Thunderstone) != nullptr, true);
+
     return 0;
 }
 
