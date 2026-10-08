@@ -21,6 +21,8 @@
 #include "PokemonFRLG_AutoStory_Segment_B5a.h"
 #include "PokemonFRLG_AutoStory_Segment_B5b.h"
 #include "PokemonFRLG_AutoStory_Segment_B5c.h"
+#include "PokemonFRLG_AutoStory_Segment_B6a.h"
+#include "PokemonFRLG_AutoStory_Segment_B6b.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -43,8 +45,8 @@ std::string phase_name(Phase phase){
     case Phase::B5a: return "B5a: Pokemon Tower entrance (Mr. Fuji rescue)";
     case Phase::B5b: return "B5b: Pokemon Tower traversal";
     case Phase::B5c: return "B5c: Fuchsia Gym \u2192 Soul Badge won";
-    case Phase::B6a: return "B6a: Safari Zone \u2192 HM acquisition (Surf/Strength)";
-    case Phase::B6b: return "B6b: Cinnabar Gym \u2192 Marsh Badge won";
+    case Phase::B6a: return "B6a: Saffron City \u2192 Silph Co. (Giovanni defeated, Lapras obtained)";
+    case Phase::B6b: return "B6b: Saffron Gym \u2192 Marsh Badge won";
     case Phase::B7a: return "B7a: Pokemon Mansion \u2192 Cinnabar Gym entrance";
     case Phase::B7b: return "B7b: Cinnabar Gym \u2192 Volcano Badge won";
     case Phase::B8a: return "B8a: Seafoam Islands traversal";
@@ -248,6 +250,54 @@ public:
     }
 };
 
+//  Real implementations of Phase::B6a/B6b (Marsh Badge). Each is a thin
+//  wrapper matching the AutoStory_Segment_B5{a,b,c} pattern above; see
+//  PokemonFRLG_AutoStory_Segment_B6{a,b}.h/.cpp for the actual logic and
+//  known caveats (first-pass/not hardware-verified in several places,
+//  most notably the Silph Co. card-key floor routing and Sabrina's
+//  teleport-tile gym puzzle).
+class AutoStory_Segment_B6a : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B6a);
+    }
+    virtual std::string start_text() const override{
+        return "Outside the Fuchsia Gym, Soul Badge in hand.";
+    }
+    virtual std::string end_text() const override{
+        return "Lapras obtained, standing outside Silph Co. in Saffron City.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B6a_silph_co(env, context, options, stats);
+    }
+};
+
+class AutoStory_Segment_B6b : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B6b);
+    }
+    virtual std::string start_text() const override{
+        return "Lapras obtained, standing outside Silph Co. in Saffron City.";
+    }
+    virtual std::string end_text() const override{
+        return "Marsh Badge won. Standing outside the Saffron Gym.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B6b_sabrina_marsh_badge(env, context, options, stats);
+    }
+};
+
 }  //  anonymous namespace
 
 
@@ -272,9 +322,9 @@ const std::vector<std::unique_ptr<AutoStory_Segment>>& ALL_AUTO_STORY_SEGMENT_LI
         ret.emplace_back(std::make_unique<AutoStory_Segment_B5a>());
         ret.emplace_back(std::make_unique<AutoStory_Segment_B5b>());
         ret.emplace_back(std::make_unique<AutoStory_Segment_B5c>());
-        add(Phase::B6a, "Outside the Fuchsia Gym, Soul Badge in hand.",                                "Exited the Safari Zone with Surf and Strength obtained.");
-        add(Phase::B6b, "Surf and Strength obtained, heading for Cinnabar Island.",                    "Marsh Badge won. Outside the Cinnabar Gym.");
-        add(Phase::B7a, "Outside the Cinnabar Gym, Marsh Badge in hand.",                              "Exited Pokemon Mansion, standing outside the Cinnabar Gym.");
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B6a>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B6b>());
+        add(Phase::B7a, "Outside the Saffron Gym, Marsh Badge in hand.",                               "Exited Pokemon Mansion, standing outside the Cinnabar Gym.");
         add(Phase::B7b, "Standing outside the Cinnabar Gym, ready to challenge it.",                   "Volcano Badge won. Outside the Cinnabar Gym.");
         add(Phase::B8a, "Outside the Cinnabar Gym, Volcano Badge in hand.",                            "Exited Seafoam Islands onto Route 20, heading for Viridian City.");
         add(Phase::B8b, "On Route 20/Viridian City, heading for the Viridian Gym.",                    "Earth Badge won. Outside the Viridian Gym -- all 8 badges obtained.");

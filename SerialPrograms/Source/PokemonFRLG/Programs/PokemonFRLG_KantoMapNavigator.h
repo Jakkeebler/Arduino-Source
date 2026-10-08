@@ -110,6 +110,22 @@ namespace KantoGoals{
     constexpr KantoGoal FuchsiaGymEntrance          {217, 340, 0};
     constexpr KantoGoal FuchsiaSafariZoneEntrance   {236, 332, 0};
 
+    //  ---- Phase B6 (Marsh Badge) building doors ----
+    //
+    //  UNVERIFIED / ESTIMATED, same caveat as the Phase B5 doors immediately
+    //  above: Silph Co. and the Saffron Gym are both interior-dungeon
+    //  sprites that haven't been template-matched against
+    //  Kanto-Combined.png yet, so these were placed by small relative
+    //  offset from the already-verified SaffronPokeCenterEntrance anchor
+    //  (Saffron City's layout puts both buildings near the city center,
+    //  within a block or two of the Pokemon Center). Before relying on
+    //  these for a real run, verify (and correct) them with
+    //  Scripts/PokemonFRLG/kanto_zoom_crop.py (crop + grid the artwork) and
+    //  Scripts/PokemonFRLG/kanto_reachability.py (confirm the goal tile is
+    //  actually walkable / reachable).
+    constexpr KantoGoal SilphCoEntrance             {268, 142, 0};
+    constexpr KantoGoal SaffronGymEntrance          {290, 162, 0};
+
     //  ---- Phase B1 (Boulder Badge) building doors ----
     //
     //  Derived directly from the generated warp_events door tile
