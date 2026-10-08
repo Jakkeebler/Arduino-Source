@@ -37,6 +37,25 @@ bool move_cursor_to_option(
 );
 
 
+// In-battle move list (FIGHT submenu), 2x2 grid:
+//   Move1 Move2
+//   Move3 Move4
+enum class MoveSlot{
+    Move1 = 0,
+    Move2 = 1,
+    Move3 = 2,
+    Move4 = 3,
+};
+
+// Starting from the FIGHT move list with the selection arrow somewhere on a move slot,
+// move the cursor to `destination`. Returns true if successful, false if the arrow
+// could not be detected (the float-box coordinates may need calibration).
+bool move_cursor_to_move_slot(
+    ConsoleHandle& console, ProControllerContext& context,
+    MoveSlot destination
+);
+
+
 }
 }
 }

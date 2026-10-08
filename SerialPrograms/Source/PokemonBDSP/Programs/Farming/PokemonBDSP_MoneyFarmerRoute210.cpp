@@ -10,6 +10,7 @@
 #include "CommonTools/Async/InferenceRoutines.h"
 #include "CommonTools/StartupChecks/StartProgramChecks.h"
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_PushButtons.h"
+#include "NintendoSwitch/Programs/NintendoSwitch_GameEntry.h"
 #include "Pokemon/Pokemon_Strings.h"
 #include "PokemonBDSP/PokemonBDSP_Settings.h"
 #include "PokemonBDSP/Programs/PokemonBDSP_GlobalRoomHeal.h"
@@ -184,8 +185,8 @@ bool MoneyFarmerRoute210::battle(SingleSwitchProgramEnvironment& env, ProControl
                 {learn_move},
             }
         );
-        
-        
+
+
         switch (ret){
         case 0:
             env.log("Battle menu detected!", COLOR_BLUE);
@@ -254,11 +255,8 @@ bool MoneyFarmerRoute210::battle(SingleSwitchProgramEnvironment& env, ProControl
             return true;
         default:
             stats.m_errors++;
-            OperationFailedException::fire(
-                ErrorReport::SEND_ERROR_REPORT,
-                "Timed out after 2 minutes.",
-                env.console
-            );
+            env.log("Timed out after 2 minutes. Assume battle ended.", COLOR_RED);
+            return false;
         }
     }
 
@@ -440,7 +438,7 @@ void MoneyFarmerRoute210::program(SingleSwitchProgramEnvironment& env, ProContro
     uint32_t total_pickup_checks = 0;
 
     //  Connect the controller.
-    pbf_press_button(context, BUTTON_B, 40ms, 40ms);
+    require_player(env.console, context, BUTTON_B);
 
     bool need_to_charge = true;
     if (START_LOCATION == StartLocation::CelesticTown){

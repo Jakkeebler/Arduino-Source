@@ -34,7 +34,8 @@ public:
     )
         : JoyconType(logger, controller_class)
         , PABotBase2_OemController(
-            logger, connection, controller_type,
+            logger, AbstractController::logging_throttler(),
+            connection, controller_type,
             std::move(on_rumble)
         )
         , m_controller_type(controller_type)
@@ -46,11 +47,11 @@ public:
     virtual Logger& logger() override{
         return m_logger;
     }
-    virtual RecursiveThrottler& logging_throttler() override{
-        return m_logging_throttler;
-    }
     virtual bool is_ready() const override{
         return PABotBase2_Controller::is_ready();
+    }
+    virtual ControllerPlayerNumber get_player_number(Cancellable& cancellable) override{
+        return PABotBase2_OemController::get_player_number(cancellable);
     }
 
 
@@ -224,7 +225,7 @@ protected:
             static_cast<const SwitchCommand&>(*item).apply(controller_state);
         }
 
-        pabb_NintendoSwitch_OemController_State0x30_Buttons buttons{
+        OemController_State0x30_Buttons buttons{
             .button3 = 0,
             .button4 = 0,
             .button5 = 0,
@@ -249,7 +250,7 @@ protected:
             controller_state.left_joystick
         );
 
-        pabb_NintendoSwitch_OemController_State0x30_Gyro gyro{};
+        OemController_State0x30_Gyro gyro{};
         bool gyro_active = populate_report_gyro(gyro, controller_state);
 
         if (!gyro_active){
@@ -267,7 +268,7 @@ protected:
             static_cast<const SwitchCommand&>(*item).apply(controller_state);
         }
 
-        pabb_NintendoSwitch_OemController_State0x30_Buttons buttons{
+        OemController_State0x30_Buttons buttons{
             .button3 = 0,
             .button4 = 0,
             .button5 = 0,
@@ -284,13 +285,13 @@ protected:
             controller_state.right_joystick
         );
 
-    #if 0
+#if 0
         cout << (int)controller_state.right_stick_x << " - "
              << (int)controller_state.right_stick_y << ": "
              << std::chrono::duration_cast<Milliseconds>(entry.duration).count() << endl;
-    #endif
+#endif
 
-        pabb_NintendoSwitch_OemController_State0x30_Gyro gyro{};
+        OemController_State0x30_Gyro gyro{};
         bool gyro_active = populate_report_gyro(gyro, controller_state);
 
         if (!gyro_active){
@@ -329,7 +330,8 @@ public:
         ControllerType controller_type
     )
         : PABotBase2_JoyCon<LeftJoycon>(
-            logger, connection,
+            logger,
+            connection,
             ControllerClass::NintendoSwitch_LeftJoycon,
             controller_type,
             [this](double magnitude){ on_rumble(magnitude); }
@@ -349,7 +351,8 @@ public:
         ControllerType controller_type
     )
         : PABotBase2_JoyCon<RightJoycon>(
-            logger, connection,
+            logger,
+            connection,
             ControllerClass::NintendoSwitch_RightJoycon,
             controller_type,
             [this](double magnitude){ on_rumble(magnitude); }

@@ -15,6 +15,7 @@
 #include "CommonFramework/Panels/PanelTools.h"
 #include "CommonFramework/Panels/UI/PanelElements.h"
 #include "CommonFramework/ProgramStats/StatsTracking.h"
+#include "CommonFramework/ResourceDownload/ProgramResourceDownloadWidget.h"
 #include "NintendoSwitch/Framework/NintendoSwitch_SingleSwitchProgramOption.h"
 #include "NintendoSwitch_SingleSwitchProgramWidget.h"
 
@@ -49,8 +50,8 @@ SingleSwitchProgramWidget2::SingleSwitchProgramWidget2(
     , m_holder(holder)
     , m_session(option, 0)
 {
-    QVBoxLayout* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    m_layout = new QVBoxLayout(this);
+    m_layout->setContentsMargins(0, 0, 0, 0);
 
     const SingleSwitchProgramDescriptor& descriptor = option.descriptor();
 
@@ -61,7 +62,7 @@ SingleSwitchProgramWidget2::SingleSwitchProgramWidget2(
         descriptor.description(),
         descriptor.color_class()
     );
-    layout->addWidget(header);
+    m_layout->addWidget(header);
 
     if (descriptor.deprecated()){
         QMessageBox box;
@@ -78,7 +79,7 @@ SingleSwitchProgramWidget2::SingleSwitchProgramWidget2(
 
     {
         QScrollArea* scroll_outer = new QScrollArea(this);
-        layout->addWidget(scroll_outer);
+        m_layout->addWidget(scroll_outer);
         scroll_outer->setWidgetResizable(true);
 
         QWidget* scroll_inner = new QWidget(scroll_outer);
@@ -101,10 +102,11 @@ SingleSwitchProgramWidget2::SingleSwitchProgramWidget2(
 
     m_stats_bar = new StatsBar(*this);
     m_stats_bar->set_stats("", m_session.historical_stats());
-    layout->addWidget(m_stats_bar);
+    m_layout->addWidget(m_stats_bar);
 
     m_actions_bar = new RunnablePanelActionBar(*this, m_session.current_state());
-    layout->addWidget(m_actions_bar);
+    m_layout->addWidget(m_actions_bar);
+
 
     connect(
         m_actions_bar, &RunnablePanelActionBar::start_clicked,
@@ -151,7 +153,11 @@ void SingleSwitchProgramWidget2::state_change(ProgramState state){
         }else{
             m_holder.on_busy();
         }
-    });
+
+        if(state == ProgramState::STOPPING){
+            ensure_downloads_table()->remove_all_downloads();
+        }        
+    }, Qt::QueuedConnection);
 }
 void SingleSwitchProgramWidget2::stats_update(const StatsTracker* current_stats, const StatsTracker* historical_stats){
     QMetaObject::invokeMethod(this, [this, current_stats, historical_stats]{
@@ -159,16 +165,47 @@ void SingleSwitchProgramWidget2::stats_update(const StatsTracker* current_stats,
             current_stats == nullptr ? "" : current_stats->to_str(StatsTracker::DISPLAY_ON_SCREEN),
             historical_stats == nullptr ? "" : historical_stats->to_str(StatsTracker::DISPLAY_ON_SCREEN)
         );
-    });
+    }, Qt::QueuedConnection);
 }
 void SingleSwitchProgramWidget2::error(const std::string& message){
     QMetaObject::invokeMethod(this, [message]{
         QMessageBox box;
         box.critical(nullptr, "Error", QString::fromStdString(message));
-    });
+    }, Qt::QueuedConnection);
+}
+void SingleSwitchProgramWidget2::download_error(const std::string& message){
+    if (m_popup_is_open.exchange(true)){ // only show popups if one isn't already open
+        return;
+    }
+
+    QMetaObject::invokeMethod(this, [message]{
+        QMessageBox box;
+        box.critical(nullptr, "Error", QString::fromStdString(message));
+    }, Qt::QueuedConnection);
+    m_popup_is_open.store(false);
+}
+
+void SingleSwitchProgramWidget2::download_added(std::shared_ptr<ResourceDownload> download_ptr){
+    QMetaObject::invokeMethod(this, [this, download_ptr = std::move(download_ptr)]() mutable{
+        this->ensure_downloads_table()->add_download(std::move(download_ptr));
+    }, Qt::QueuedConnection);
+}
+
+void SingleSwitchProgramWidget2::all_downloads_done(){
+    QMetaObject::invokeMethod(this, [this]{
+        this->ensure_downloads_table()->remove_all_downloads();
+    }, Qt::QueuedConnection);
 }
 
 
+ProgramResourceDownloadTableWidget* SingleSwitchProgramWidget2::ensure_downloads_table() {
+    if (!m_internal_lazy_downloads_table) {
+        m_internal_lazy_downloads_table = new ProgramResourceDownloadTableWidget(*this);
+        m_internal_lazy_downloads_table->setVisible(false);
+        m_layout->addWidget(m_internal_lazy_downloads_table);
+    }
+    return m_internal_lazy_downloads_table;
+}
 
 
 

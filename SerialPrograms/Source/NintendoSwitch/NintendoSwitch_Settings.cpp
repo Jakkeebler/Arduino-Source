@@ -26,7 +26,8 @@ TimingOptions::TimingOptions()
         "Controller Timing Options",
         LockMode::UNLOCK_WHILE_RUNNING,
         EnableMode::ALWAYS_ENABLED,
-        true
+        true,
+        false
     )
     , WIRED(
         "<b>Wired Controller Timing Variation:</b><br>"
@@ -80,6 +81,11 @@ ConsoleSettings::ConsoleSettings()
         LockMode::LOCK_WHILE_RUNNING,
         "2000 ms"
     )
+    , CLOSE_GAME_DELAY(
+        "<b>Close Game Delay:</b><br>Delay from closing a game to when it's actually closed.",
+        LockMode::LOCK_WHILE_RUNNING,
+        "2000 ms"
+    )
     , SETTINGS_TO_HOME_DELAY0(
         "<b>Settings to Home Delay:</b><br>Delay from pressing home anywhere in the settings to return to the home menu.",
         LockMode::LOCK_WHILE_RUNNING,
@@ -123,6 +129,16 @@ ConsoleSettings::ConsoleSettings()
         LockMode::UNLOCK_WHILE_RUNNING,
         false
     )
+    , DATE_MENU_OPEN_SWITCH2_0(
+        "<b>Open Date Menu (Switch 2):</b>",
+        LockMode::LOCK_WHILE_RUNNING,
+        "208 ms"
+    )
+    , DATE_MENU_CLOSE_SWITCH2_0(
+        "<b>Close Date Menu (Switch 2):</b>",
+        LockMode::LOCK_WHILE_RUNNING,
+        "264 ms"
+    )
     , CODEBOARD_ENTRY_SWITCH1_WIRED(
         "Fast Code Entry Timings (Switch 1 Wired Controller)",
         false,
@@ -148,6 +164,7 @@ ConsoleSettings::ConsoleSettings()
     PA_ADD_OPTION(CONTROLLER_SETTINGS);
     PA_ADD_OPTION(TRUST_USER_CONSOLE_SELECTION);
     PA_ADD_OPTION(BLIND_START_GAME_MASH);
+    PA_ADD_OPTION(CLOSE_GAME_DELAY);
     PA_ADD_OPTION(SETTINGS_TO_HOME_DELAY0);
     PA_ADD_OPTION(START_GAME_REQUIRES_INTERNET);
     PA_ADD_OPTION(START_GAME_INTERNET_CHECK_DELAY0);
@@ -156,6 +173,8 @@ ConsoleSettings::ConsoleSettings()
     PA_ADD_OPTION(ENABLE_SBB3_PINGS);
     PA_ADD_OPTION(ENABLE_SBB3_LOGGING);
     PA_ADD_OPTION(TIMING_OPTIONS);
+    PA_ADD_OPTION(DATE_MENU_OPEN_SWITCH2_0);
+    PA_ADD_OPTION(DATE_MENU_CLOSE_SWITCH2_0);
     if (PreloadSettings::instance().DEVELOPER_MODE){
         PA_ADD_OPTION(CODEBOARD_ENTRY_SWITCH1_WIRED);
         PA_ADD_OPTION(CODEBOARD_ENTRY_SWITCH1_WIRELESS);

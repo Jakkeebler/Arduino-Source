@@ -81,6 +81,7 @@ public:
         std::string label,
         LockMode lock_while_running,
         bool enable_saveload,
+        size_t max_rows_before_hiding_by_default,
         std::vector<std::unique_ptr<EditableTableRow>> default_value = {}
     );
     void set_default(std::vector<std::unique_ptr<EditableTableRow>> default_value);
@@ -88,6 +89,7 @@ public:
 
 public:
     const std::string& label() const{ return m_label; }
+    bool expand_by_default() const{ return current_rows() < m_max_rows_before_hiding_by_default; }
     const std::vector<std::unique_ptr<EditableTableRow>>& defaults() const{
         return m_default;
     }
@@ -170,10 +172,16 @@ public:
     void clone_row(const EditableTableRow& row);
     void remove_row(EditableTableRow& row);
 
+    //  Swap `row` with its immediate neighbor. direction == -1 moves up
+    //  (toward index 0); direction == +1 moves down. No-op if the row is
+    //  orphaned, the row is already at the boundary, or direction isn't ±1.
+    void move_row(EditableTableRow& row, int direction);
+
 
 private:
     const std::string m_label;
     const bool m_enable_saveload;
+    const size_t m_max_rows_before_hiding_by_default;
     mutable SpinLock m_default_lock;
     std::vector<std::unique_ptr<EditableTableRow>> m_default;
 

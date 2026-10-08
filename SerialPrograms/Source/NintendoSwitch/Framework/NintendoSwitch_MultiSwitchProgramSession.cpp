@@ -14,6 +14,7 @@
 #include "CommonFramework/Notifications/ProgramNotifications.h"
 #include "CommonFramework/Options/Environment/SleepSuppressOption.h"
 #include "CommonFramework/Options/Environment/PerformanceOptions.h"
+#include "Controllers/NullController.h"
 #include "NintendoSwitch/NintendoSwitch_Settings.h"
 #include "NintendoSwitch_MultiSwitchProgramOption.h"
 #include "NintendoSwitch_MultiSwitchProgramSession.h"
@@ -150,6 +151,24 @@ void MultiSwitchProgramSession::internal_stop_program(){
     }
 }
 void MultiSwitchProgramSession::internal_run_program(){
+    CancellableHolder<CancellableScope> download_scope;
+    {
+        std::lock_guard<Mutex> lg(program_lock());
+        if (current_state() != ProgramState::RUNNING){
+            return;
+        }
+        m_scope.store(&download_scope, std::memory_order_release);
+    }
+
+    bool success = download_prereqs(download_scope);
+    {
+        std::lock_guard<Mutex> lg(program_lock());
+        m_scope.store(nullptr, std::memory_order_release);
+    }    
+    if (!success){
+        return;
+    }
+        
     auto ScopeCheck = m_sanitizer.check_scope();
     m_option.options().reset_state();
 
@@ -166,14 +185,15 @@ void MultiSwitchProgramSession::internal_run_program(){
     );
 
     size_t consoles = m_system.count();
+    FixedLimitVector<NullController> null_controller_placeholders(consoles);
     FixedLimitVector<ConsoleHandle> handles(consoles);
     for (size_t c = 0; c < consoles; c++){
         SwitchSystemSession& session = m_system[c];
-        if (!session.controller_session().ready()){
-            report_error("Cannot Start: The controller is not ready.");
-            return;
-        }
         AbstractController* controller = session.controller_session().controller();
+        if (controller == nullptr){
+            null_controller_placeholders.emplace_back(session.logger());
+            controller = &null_controller_placeholders.back();
+        }
         handles.emplace_back(
             c,
             session.logger(),

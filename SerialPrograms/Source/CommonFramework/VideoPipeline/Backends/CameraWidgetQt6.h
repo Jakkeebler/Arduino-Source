@@ -30,6 +30,25 @@ namespace PokemonAutomation{
 namespace CameraQt6QVideoSink{
 
 
+void get_format(
+    const QCameraFormat& qformat,
+    Resolution& resolution,
+    VideoFormat& format,
+    FramesPerSecond& fps
+);
+
+QCameraFormat build_format_set(
+    Logger& logger,
+    VideoFormatSet& format_set,
+    const QCameraDevice& device,
+    Resolution desired_resolution,
+    VideoFormat desired_format,
+    FramesPerSecond desired_fps
+);
+
+
+
+
 class CameraBackend : public PokemonAutomation::CameraBackend{
 public:
     // Get all cameras' info.
@@ -43,7 +62,9 @@ public:
     virtual std::unique_ptr<VideoSource> make_video_source(
         Logger& logger,
         const CameraInfo& info,
-        Resolution resolution
+        Resolution resolution,
+        VideoFormat format,
+        FramesPerSecond fps
     ) const override;
 };
 
@@ -60,14 +81,22 @@ public:
     CameraVideoSource(
         Logger& logger,
         const CameraInfo& info,
-        Resolution desired_resolution
+        Resolution desired_resolution,
+        VideoFormat desired_format,
+        FramesPerSecond desired_fps
     );
 
     virtual Resolution current_resolution() const override{
         return m_resolution;
     }
-    virtual const std::vector<Resolution>& supported_resolutions() const override{
-        return m_resolutions;
+    virtual VideoFormat current_format() const override{
+        return m_format;
+    }
+    virtual FramesPerSecond current_fps() const override{
+        return m_fps;
+    }
+    virtual const VideoFormatSet& supported_formats() const override{
+        return m_formats;
     }
 
     virtual VideoSnapshot snapshot_latest_blocking() override{
@@ -80,7 +109,12 @@ public:
     virtual QWidget* make_display_QtWidget(QWidget* parent) override;
 
 private:
-    void init(const CameraInfo& info, Resolution desired_resolution);
+    void init(
+        const CameraInfo& info,
+        Resolution desired_resolution,
+        VideoFormat desired_format,
+        FramesPerSecond desired_fps
+    );
 //    void set_video_output(QGraphicsVideoItem& item);
 
 
@@ -91,6 +125,8 @@ private:
 
     Logger& m_logger;
     Resolution m_resolution;
+    VideoFormat m_format;
+    FramesPerSecond m_fps;
 
     Mutex m_snapshot_lock;
 
@@ -98,7 +134,7 @@ private:
     std::unique_ptr<QVideoSink> m_video_sink;
     std::unique_ptr<QMediaCaptureSession> m_capture;
 
-    std::vector<Resolution> m_resolutions;
+    VideoFormatSet m_formats;
 
 
 private:

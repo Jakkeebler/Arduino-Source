@@ -59,6 +59,14 @@ public:
         //  When the program state is changed, all added listeners'
         //  program_state_changed() will get called.
         virtual void on_program_state_changed(bool program_is_running){}
+        //  When the option list backing a select-style cell changes (e.g.
+        //  the StringSelectDatabase contents are replaced), all added
+        //  listeners' on_config_options_changed() will get called. Listeners
+        //  bound to UI widgets should rebuild any cached representation of
+        //  the option list (combo box items etc.). This is independent of
+        //  value changes — the selected slug may stay the same while the
+        //  available options shift.
+        virtual void on_config_options_changed(){}
     };
     void add_listener(Listener& listener);
     void remove_listener(Listener& listener);
@@ -128,6 +136,12 @@ public:
     //  to lock/unlock depending on whether they are allowed to be changed by
     //  the user while the program is running.
     virtual void report_program_state(bool program_is_running);
+
+    //  Report that the underlying option list / database has changed. UI
+    //  widgets should rebuild their option list (e.g. combo box items) on
+    //  receipt. Public so external code can mutate a select cell's database
+    //  and notify the bound widget.
+    virtual void report_options_changed();
 
 protected:
     //  Report that the value of this config has changed. This will be pushed to

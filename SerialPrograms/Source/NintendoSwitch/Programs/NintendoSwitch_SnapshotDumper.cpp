@@ -45,9 +45,9 @@ SnapshotDumper::SnapshotDumper()
     , SNAPSHOT_MODE(
         "<b>Snapshot trigger:",
         {
-            {SnapshotMode::KEYPRESS,         "key-press",           "Key Press. Press 'Page Down', while the screen is focused."},
-            {SnapshotMode::MOUSE_CLICK,            "mouse-click",              "Mouse click on the screen."},
-            {SnapshotMode::PERIODIC,            "periodic",              "Periodic: every X milliseconds as defined below."},
+            {SnapshotMode::KEYPRESS,    "key-press",    "Key Press. Press 'Page Down', while the screen is focused."},
+            {SnapshotMode::MOUSE_CLICK, "mouse-click",  "Mouse click on the screen."},
+            {SnapshotMode::PERIODIC,    "periodic",     "Periodic: every X milliseconds as defined below."},
         },
         LockMode::LOCK_WHILE_RUNNING,
         SnapshotMode::KEYPRESS
@@ -137,22 +137,22 @@ void SnapshotKeyTrigger::on_key_release(QKeyEvent* event){
 }
 
 
-void SnapshotDumper::program(SingleSwitchProgramEnvironment& env, ProControllerContext& context){
+void SnapshotDumper::program(SingleSwitchProgramEnvironment& env, CancellableScope& scope){
     std::string folder_path = USER_FILE_PATH() + "ScreenshotDumper/";
     QDir().mkpath(folder_path.c_str());
 
     if (SNAPSHOT_MODE == SnapshotMode::KEYPRESS){
         SnapshotKeyTrigger key_trigger(env.console, env.console.overlay(), FORMAT);
-        context.wait_until_cancel();
+        scope.wait_until_cancel();
     }else if (SNAPSHOT_MODE == SnapshotMode::MOUSE_CLICK){
         SnapshotClickTrigger click_trigger(env.console, env.console.overlay(), FORMAT);
-        context.wait_until_cancel();
+        scope.wait_until_cancel();
     }else if (SNAPSHOT_MODE == SnapshotMode::PERIODIC){
         while (true){
             VideoSnapshot last = env.console.video().snapshot();
             std::string filename = folder_path + now_to_filestring();
             last->save(filename + to_format_string(FORMAT));
-            context.wait_until(last.timestamp + std::chrono::milliseconds(PERIOD_MILLISECONDS));
+            scope.wait_until(last.timestamp + std::chrono::milliseconds(PERIOD_MILLISECONDS));
         }
     }else{
         throw InternalProgramError(nullptr, PA_CURRENT_FUNCTION, "Unexpected SNAPSHOT_MODE enum.");

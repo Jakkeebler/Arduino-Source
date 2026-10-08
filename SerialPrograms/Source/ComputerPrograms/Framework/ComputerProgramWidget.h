@@ -23,7 +23,10 @@
 #include "ComputerPrograms/Framework/ComputerProgramSession.h"
 #include "ComputerProgramSession.h"
 
+QT_FORWARD_DECLARE_CLASS(QVBoxLayout)
 namespace PokemonAutomation{
+
+    class ProgramResourceDownloadTableWidget;
 
 
 
@@ -40,13 +43,23 @@ private:
     virtual void state_change(ProgramState state) override;
     virtual void stats_update(const StatsTracker* current_stats, const StatsTracker* historical_stats) override;
     virtual void error(const std::string& message) override;
+    virtual void download_error(const std::string& message) override;
+    virtual void download_added(std::shared_ptr<ResourceDownload> download_ptr) override;
+    virtual void all_downloads_done() override;
+
+    ProgramResourceDownloadTableWidget* ensure_downloads_table();
 
 private:
     PanelHolder& m_holder;
     ComputerProgramSession m_session;
+    QVBoxLayout* m_layout;
     ConfigWidget* m_options;
     StatsBar* m_stats_bar;
     RunnablePanelActionBar* m_actions_bar;
+
+    // WARNING: Do not use directly. Always use ensure_downloads_table().
+    ProgramResourceDownloadTableWidget* m_internal_lazy_downloads_table = nullptr;
+    std::atomic<bool> m_popup_is_open{false};
 };
 
 

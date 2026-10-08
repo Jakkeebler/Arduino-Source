@@ -9,8 +9,11 @@
 #ifndef PokemonAutomation_PokemonFRLG_Navigation_H
 #define PokemonAutomation_PokemonFRLG_Navigation_H
 
+#include <vector>
+#include "CommonFramework/Language.h"
 #include "CommonFramework/Tools/VideoStream.h"
 #include "NintendoSwitch/Controllers/Procon/NintendoSwitch_ProController.h"
+#include "PokemonFRLG/Inference/Menus/PokemonFRLG_PartySlot.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -19,11 +22,30 @@ namespace NintendoSwitch{
     using ProControllerContext = ControllerContext<ProController>;
 namespace PokemonFRLG{
 
+using namespace std::chrono_literals;
+
+
 enum class BattleResult{
     opponentfainted,
     playerfainted,
     outofpp,
     unknown
+};
+
+class MoveLearnDecider;
+struct MoveLearnConfig;
+
+//  Outcome of exit_wild_battle. Distinguishing these is critical: in the
+//  StopBattleStuck case the move-learn dialog is still on-screen and the
+//  caller MUST NOT attempt overworld navigation; the only safe action is
+//  to halt the program for manual review.
+enum class WildBattleExit{
+    NoLearn,           //  Battle exited cleanly. No move-learn dialog appeared.
+    LearnHandled,      //  Move-learn dialog appeared and was handled (declined or
+                       //  replaced) per the decider; battle exited cleanly.
+    StopBattleStuck,   //  Stop signal fired (stop_on_move_learn=true OR decider
+                       //  returned Stop). exit_wild_battle returned WITHOUT
+                       //  exiting the battle — the dialog is still active.
 };
 
 enum class KantoFlyLocation{
@@ -56,28 +78,91 @@ uint64_t open_slot_six(ConsoleHandle& console, ProControllerContext& context);
 // For soft resets, send_out_lead as false and then soft_reset() to save time.
 bool handle_encounter(ConsoleHandle& console, ProControllerContext& context, bool send_out_lead);
 
-// Mash A to keep using the first move until a Pokemon faints (either the player's or the opponent)
-// Flees the battle if out of PP.
-// Returns a BattleResult indicating how the battle ended
-BattleResult spam_first_move(ConsoleHandle& console, ProControllerContext& context);
+// Use a move each turn until a Pokemon faints (either the player's or the opponent).
+// `move_priority` is a list of 0-based move slot indices in the order to try
+// when the highest-priority slot is out of PP. Default {0} preserves the
+// historical "always use move 1" behavior.
+// Flees the battle if every priority slot is out of PP.
+// Returns a BattleResult indicating how the battle ended.
+BattleResult spam_first_move(
+    ConsoleHandle& console, ProControllerContext& context,
+    const std::vector<size_t>& move_priority = std::vector<size_t>{0}
+);
 
 // Run from battle. Cursor must start on the FIGHT button. Assumes fleeing will always work. (Smoke Ball)
 void flee_battle(ConsoleHandle& console, ProControllerContext& context);
 
 // Exit a wild battle after winning. Checks if a Pokemon is learning a new move.
-// If stop_on_move_learn is true, this exits early when a move is being learned without declining it. Otherwise, this returns to the overworld. 
-// Returns true if a move was learned (even if it was rejected) and false otherwise.
-bool exit_wild_battle(ConsoleHandle& console, ProControllerContext& context, bool stop_on_move_learn, bool prevent_evolution);
+// If stop_on_move_learn is true, this returns StopBattleStuck early when a
+// move-learn dialog appears (battle is NOT exited). Otherwise, behaviour is
+// determined by `decider`:
+//   nullptr   - always decline new moves (preserves existing 4 moves).
+//   non-null  - OCR the offered move's name, ask the decider whether to accept;
+//               if accepting, OCR the forget screen and ask the decider which
+//               slot to forget. `language` selects the OCR dictionary.
+//
+// Returns:
+//   NoLearn          - no move-learn dialog appeared, battle exited.
+//   LearnHandled     - move-learn dialog handled (declined or replaced),
+//                      battle exited cleanly. Caller may rescan the slot.
+//   StopBattleStuck  - Stop fired (via stop_on_move_learn or decider). The
+//                      dialog is STILL ACTIVE. Caller must halt the program
+//                      and NOT attempt any further navigation.
+//  evolved_out: optional. Set to true if an evolution sequence was observed
+//  during the battle exit. A Pokemon can evolve without learning a move, so
+//  callers that cache species/moves must rescan on this signal as well as on
+//  WildBattleExit::LearnHandled. Never set to false — initialize it yourself.
+//  learn_config: optional tuning for the move-learn flow (voting sample count and
+//  interval, retry caps, timeouts). nullptr uses the MoveLearnConfig defaults.
+//  Move-learn reads are multi-frame voted; see PokemonFRLG_MoveLearnStateMachine.h.
+WildBattleExit exit_wild_battle(
+    ConsoleHandle& console, ProControllerContext& context,
+    bool stop_on_move_learn, bool prevent_evolution,
+    const MoveLearnDecider* decider = nullptr,
+    Language language = Language::English,
+    bool* evolved_out = nullptr,
+    const MoveLearnConfig* learn_config = nullptr
+);
 
 // Starting from the start menu, a sub-screen of the start menu, or the overworld, navigate to the party screen
 enum class StartMenuContext {
     STANDARD,
-    SAFARI_ZONE
+    SAFARI_ZONE,
+    NO_DEX,
 };
 void open_party_menu_from_overworld(ConsoleHandle& console, ProControllerContext& context, StartMenuContext menu_context = StartMenuContext::STANDARD);
 
+// Starting from the party menu, detect the last occupied party slot
+PartySlot detect_last_occupied_party_slot(ConsoleHandle& console);
+
+// Swap the Pokémon at game_slot_1indexed (2–6) into the lead (slot 1) via the overworld party menu SWITCH command.
+// Assumes the party menu is closed and the player is in the overworld.
+void switch_party_lead_overworld(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed);
+
+// After a player Pokémon faints in battle the game shows the forced-switch party screen.
+// This function navigates to game_slot_1indexed (2–6) and sends it out.
+// Call after spam_first_move() returns BattleResult::playerfainted when alive allies remain.
+void select_forced_switch_slot(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed);
+
+// VOLUNTARY mid-battle switch, from the battle menu (not a faint).
+//
+// Used for switch training: the weak Pokemon is sent out at the start of the battle so it
+// counts as a participant, then this swaps in a Pokemon that can actually win. In Gen 3 the
+// EXP is split among everyone that was sent out, so the trainee is paid for showing up.
+//
+// Safe by construction: switching resolves before the opponent's move, so the trainee never
+// takes a hit on the turn it is withdrawn.
+//
+// Assumes the battle menu (FIGHT / BAG / POKéMON / RUN) is showing or about to show, and
+// returns once the battle menu is back with the new Pokemon active.
+void switch_pokemon_in_battle(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed);
+
 // Starting from the start menu, a sub-screen of the start menu, or the overworld, navigate to the bag
 void open_bag_from_overworld(ConsoleHandle& console, ProControllerContext& context, StartMenuContext menu_context = StartMenuContext::STANDARD);
+
+// Uses Sweet Scent, assuming that the specified party member has it learned
+// The last argument is the distance of the Sweet Scent user from the last party slot
+void use_sweet_scent_from_overworld(ConsoleHandle& console, ProControllerContext& context, int from_last = 0);
 
 // Uses Teleport to return to a PokeCenter. 
 // Assumes that Teleport is usable and the last party member has it learned
@@ -99,11 +184,25 @@ void leave_pokecenter(ConsoleHandle& console, ProControllerContext& context);
 // Combine with enter_pokecenter, leave_pokecenter, and use_teleport_from_overworld for automating healing your party
 void heal_at_pokecenter(ConsoleHandle& console, ProControllerContext& context);
 
+// Enter a Gym. Assumes the player is standing in front of its door (one tile
+// south of the door's warp tile). Same generic north-walk-until-fade
+// mechanics as enter_pokecenter -- every Gym building uses the same door
+// sprite/warp convention.
+void enter_gym(ConsoleHandle& console, ProControllerContext& context);
+
+// Leave a Gym. Assumes the player is standing directly north of the exit
+// (i.e. just inside the door, facing it).
+void leave_gym(ConsoleHandle& console, ProControllerContext& context);
+
 // Trigger encounters in grass without moving by tapping the left thumbstick back and forth
 // Can be used to alternate left/right and up/down. It is important that the player is not facing
 // the same direction as the first thumbstick press.
 // returns -1 if no encounter is triggered, 0 if a non-shiny is encounter, and 1 if a shiny is encountered
-int grass_spin(ConsoleHandle& console, ProControllerContext& context, bool leftright, Seconds timeout = 60s);
+int grass_spin(ConsoleHandle& console, ProControllerContext& context, bool leftright, Seconds timeout = std::chrono::seconds(60));
+
+// Trigger encounters by fishing with a registered rod. The player must be facing water.
+// returns -1 if no encounter is triggered, 0 if a non-shiny is encounter, and 1 if a shiny is encountered
+int fish_encounter(ConsoleHandle& console, ProControllerContext& context, Seconds timeout = 300s);
 
 // Go to home to check that scaling is 100%. Then resume game.
 void home_black_border_check(ConsoleHandle& console, ProControllerContext& context);

@@ -7,8 +7,10 @@
 #ifndef PokemonAutomation_ResourceDownloadHelpers_H
 #define PokemonAutomation_ResourceDownloadHelpers_H
 
-#include <string>
 #include <optional>
+#include <string>
+#include <vector>
+#include <unordered_set>
 
 
 namespace PokemonAutomation{
@@ -22,8 +24,8 @@ namespace Filesystem{
 struct DownloadedResourceMetadata{
     std::string resource_name;
     std::optional<uint16_t> version_num;
-    size_t size_compressed_bytes;
-    size_t size_decompressed_bytes;
+    uint64_t size_compressed_bytes;
+    uint64_t size_decompressed_bytes;
     std::string url;
     std::string sha256;
 };
@@ -36,21 +38,41 @@ enum class ResourceVersionStatus{
     // RETIRED, // no longer used
 };
 
-enum class RemoteMetadataStatus{
-    UNINITIALIZED,
-    NOT_AVAILABLE,
-    AVAILABLE,
-};
-struct RemoteMetadata {
-    RemoteMetadataStatus status = RemoteMetadataStatus::UNINITIALIZED;
-    DownloadedResourceMetadata metadata;
+
+struct ResourceVersionInfo{
+    bool is_downloaded;
+    ResourceVersionStatus version_status;
+    std::optional<uint16_t> current_version_num;
 };
 
+// there are three lists:
+// - expected_resource_download_list(): List of resources with the version numbers that the programs expect. from the local ResourceDownloadList.json
+// - list of resources downloaded locally. use get_local_version_info() to determine ResourceVersionStatus relative to the expected resource version number.
+// - remote_resource_download_list(): list of remote resources. the remote version numbers may or may not match the local list. from the remote ResourceDownloadList.json
 
-const std::vector<DownloadedResourceMetadata>& local_resource_download_list();
+const std::vector<DownloadedResourceMetadata>& expected_resource_download_list();
+
 const std::vector<DownloadedResourceMetadata>& remote_resource_download_list();
-std::optional<uint16_t> get_resource_version_num(Filesystem::Path folder_path);
-ResourceVersionStatus get_version_status(uint16_t expected_version_num, std::optional<uint16_t> current_version_num);
+
+// - This returns the version information for a resource that has been downloaded locally.
+// - This returns a struct containing a boolean representing whether the resource has been downloaded, 
+// the resource's version status (e.g. CURRENT, OUTDATED, NOT_APPLICABLE etc.), and its version number
+// - for the version status, it compares the version of the locally downloaded file to the 
+// corresponding expected_resource from expected_resource_download_list()
+ResourceVersionInfo get_local_version_info(const std::string& target_resource_slug);
+
+
+// - throws OperationFailedException if target_resource_slug isn't found within remote_resource_download_list
+// this would indicate that CC is out of date.
+// - also throws OperationFailedException if Internet is not turned on.
+DownloadedResourceMetadata get_remote_resource_metadata_from_resource_slug(const std::string& target_resource_slug);
+
+// ASSUMES: given target_resource_slug is listed within expected_resource_download_list().
+// PanelInstance::validate_resource_list() should ensure that target_resource_slug is valid.
+DownloadedResourceMetadata get_expected_resource_metadata_from_resource_slug(const std::string& target_resource_slug);
+
+
+const std::unordered_set<std::string>& all_resource_names();
 
 }
 #endif

@@ -8,8 +8,10 @@
 #include "Common/Cpp/Concurrency/AsyncTask.h"
 #include "Common/Cpp/Concurrency/FireForgetDispatcher.h"
 #include "Common/Cpp/Concurrency/Watchdog.h"
+#include "Common/Cpp/Concurrency/PeriodicRunner.h"
 #include "Common/Cpp/Exceptions.h"
 #include "Common/Cpp/ImageResolution.h"
+#include "Common/Cpp/ScopeExit.h"
 #include "Common/Qt/GlobalThreadPoolsQt.h"
 #include "StaticRegistration.h"
 #include "CommonFramework/Tools/GlobalThreadPools.h"
@@ -27,14 +29,17 @@
 #include "Integrations/DppIntegration/DppClient.h"
 #include "Logging/Logger.h"
 #include "Logging/OutputRedirector.h"
-#include "Logging/FileWindowLogger.h"
+#include "Common/Cpp/Logging/FileLogger.h"
+#include "Common/Cpp/Logging/GlobalLogger.h"
+#include "Common/Cpp/Logging/MultiOutputLogger.h"
 //#include "Tools/StatsDatabase.h"
 //#include "Windows/DpiScaler.h"
 #include "Startup/SetupSettings.h"
 #include "Startup/NewVersionCheck.h"
 #include "CommonFramework/VideoPipeline/Backends/CameraImplementations.h"
-#include "CommonTools/OCR/OCR_RawOCR.h"
+#include "CommonTools/OCR/OCR_Routines.h"
 #include "ControllerInput/ControllerInput.h"
+#include "Controllers/SerialPortPollerQt.h"
 #include "Integrations/DiscordWebhook.h"
 #include "Windows/MainWindow.h"
 
@@ -44,6 +49,10 @@ using std::endl;
 
 
 using namespace PokemonAutomation;
+
+namespace PokemonAutomation{
+    bool USE_QT_UI = true;
+}
 
 Q_DECLARE_METATYPE(std::string)
 
@@ -57,35 +66,48 @@ void set_working_directory(){
     }
 }
 
+namespace PokemonAutomation{
 
-class ScopeExit{
-    ScopeExit(const ScopeExit&) = delete;
-    void operator=(const ScopeExit&) = delete;
 
-public:
-    template <typename Lambda>
-    ScopeExit(Lambda&& lambda)
-        : m_lambda(std::move(lambda))
-    {}
-    ~ScopeExit(){
-        m_lambda();
-    }
 
-private:
-    std::function<void()> m_lambda;
-};
+FileLogger& global_file_logger(){
+    static FileLogger logger(
+        GlobalThreadPools::unlimited_normal(),
+        FileLoggerConfig{
+            .file_path = USER_FILE_PATH() + QCoreApplication::applicationName().toStdString() + ".log",
+        }
+    );
+    return logger;
+}
+
+}
+
 
 
 int run_program(int argc, char *argv[]){
+#if defined(__APPLE__)
+    PokemonAutomation::set_startup_profile(argc, argv);
     QApplication application(argc, argv);
+#else
+    QApplication application(argc, argv);
+#endif
 
     GlobalOutputRedirector redirect_stdout(std::cout, "stdout", Color());
     GlobalOutputRedirector redirect_stderr(std::cerr, "stderr", COLOR_RED);
+
+    {
+        MultiOutputLogger& logger = global_multi_logger();
+        logger.add_listener(global_file_logger());
+    }
 
     Logger& logger = global_logger_tagged();
 
     logger.log("================================================================================");
     logger.log("Starting Program...");
+    logger.log("Current path: " + QDir::currentPath().toStdString());
+    logger.log("Executable path: " + qApp->applicationDirPath().toStdString());
+    logger.log("Program setting folder: " + SETTINGS_PATH());
+    logger.log("Program resources folder: " + RESOURCE_PATH());
 
     qRegisterMetaType<size_t>("size_t");
     qRegisterMetaType<uint8_t>("uint8_t");
@@ -108,10 +130,13 @@ int run_program(int argc, char *argv[]){
 
 
 
-    //  Preload all the cameras now so we don't hang the UI later on.
-    ScopeExit cameras([]{
+    ScopeExit cleanup([]{
+        SerialPortPoller::instance().stop();
         GlobalMediaServices::instance().stop();
     });
+
+    //  Preload a bunch of stuff now so they are ready later.
+    SerialPortPoller::instance().ports();
     get_all_cameras();
 
     //  Force all the Qt thread pools to be constructed now on the main thread.
@@ -231,7 +256,7 @@ int main(int argc, char *argv[]){
 
     //  We must clear the OCR cache or it will crash on Linux when the library
     //  unloads before the cache is destructed from static memory.
-    OCR::clear_cache();
+    OCR::clear_ocr_cache();
 
     //  Stop the controllers.
     global_input_stop();
@@ -239,8 +264,9 @@ int main(int argc, char *argv[]){
     //  Stop misc. services.
     Integration::DiscordWebhook::DiscordWebhookSender::instance().stop();
     SystemSleepController::instance().stop();
+    global_periodic_runner().stop();
     global_watchdog().stop();
-    static_cast<FileWindowLogger&>(global_logger_raw()).stop();
+    global_file_logger().stop();
 
 //
 //  Workaround Qt 6.9 thread-adoption bug on Windows.

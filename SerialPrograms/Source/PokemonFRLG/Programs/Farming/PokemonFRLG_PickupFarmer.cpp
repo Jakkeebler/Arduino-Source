@@ -17,6 +17,7 @@
 #include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_BattleDialogs.h"
 #include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_PartyDialogs.h"
 #include "PokemonFRLG/Inference/Menus/PokemonFRLG_PartyMenuDetector.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_RoutePaths.h"
 #include "PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.h"
 #include "PokemonFRLG/PokemonFRLG_Navigation.h"
 #include "PokemonFRLG_PickupFarmer.h"
@@ -139,35 +140,6 @@ PickupFarmer::PickupFarmer()
 
 namespace{
 
-void walk_to_route1(SingleSwitchProgramEnvironment& env, ProControllerContext& context){
-    env.log("Walking to Route 1.");
-    // left a couple of steps
-    pbf_move_left_joystick(context, {-1, 0}, 800ms, 100ms);
-    // down to the tall grass
-    pbf_move_left_joystick(context, {0, -1}, 5200ms, 100ms);
-    // left and up to the corner
-    pbf_move_left_joystick(context, {-1, 0}, 900ms, 100ms);
-    pbf_move_left_joystick(context, {0, +1}, 900ms, 900ms);
-    context.wait_for_all_requests();
-}
-
-void walk_to_route22(SingleSwitchProgramEnvironment& env, ProControllerContext& context){
-    env.log("Walking to Route 22.");
-    // left a few steps
-    pbf_move_left_joystick(context, {-1, 0}, 900ms, 200ms);
-    // up to the bush
-    pbf_move_left_joystick(context, {0, +1}, 2300ms, 200ms);
-    // left to the trees
-    pbf_move_left_joystick(context, {-1, 0}, 7800ms, 200ms);
-    // down and over the ledge
-    pbf_move_left_joystick(context, {0, -1}, 3000ms, 200ms);
-    // left a couple of steps
-    pbf_move_left_joystick(context, {-1, 0}, 600ms, 200ms);
-    // up to into the grass
-    pbf_move_left_joystick(context, {0, +1}, 1500ms, 500ms);
-    context.wait_for_all_requests();
-}
-
 void take_pickup_items(SingleSwitchProgramEnvironment& env, ProControllerContext& context){
     env.log("Collecting items from party.");
     open_party_menu_from_overworld(env.console, context);
@@ -239,7 +211,7 @@ void PickupFarmer::program(SingleSwitchProgramEnvironment& env, ProControllerCon
                 default:
                 OperationFailedException::fire(
                     ErrorReport::SEND_ERROR_REPORT,
-                    "Option not yet implemented.",
+                    "Travel option not recognized. Please report this as a bug.",
                     env.console
                 );
                 }
@@ -257,7 +229,7 @@ void PickupFarmer::program(SingleSwitchProgramEnvironment& env, ProControllerCon
                 default:
                     OperationFailedException::fire(
                         ErrorReport::SEND_ERROR_REPORT,
-                        "Option not yet implemented.",
+                        "Game location not recognized. Please report this as a bug.",
                         env.console
                     );
                 }
@@ -322,7 +294,9 @@ void PickupFarmer::program(SingleSwitchProgramEnvironment& env, ProControllerCon
             } else if (ret2 == BattleResult::opponentfainted){
                 stats.encounters++;
                 encounters_since_item_check++;
-                bool move_learned = exit_wild_battle(env.console, context, !!STOP_ON_MOVE_LEARN, !!PREVENT_EVOLUTION);
+                //  Same as EvTrainer: collapse the enum to a bool so the
+                //  existing STOP_ON_MOVE_LEARN check semantics are preserved.
+                bool move_learned = exit_wild_battle(env.console, context, !!STOP_ON_MOVE_LEARN, !!PREVENT_EVOLUTION) != WildBattleExit::NoLearn;
                 if (move_learned && STOP_ON_MOVE_LEARN){
                     send_program_status_notification(
                         env, NOTIFICATION_STATUS_UPDATE,

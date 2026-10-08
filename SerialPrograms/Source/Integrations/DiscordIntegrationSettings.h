@@ -12,6 +12,7 @@
 #include "Common/Cpp/Options/BooleanCheckBoxOption.h"
 #include "Common/Cpp/Options/StringOption.h"
 #include "Common/Cpp/Options/EnumDropdownOption.h"
+#include "Common/Cpp/Options/ButtonOption.h"
 #include "Common/Qt/Options/GroupWidget.h"
 #include "DiscordIntegrationTable.h"
 
@@ -19,17 +20,28 @@ namespace PokemonAutomation{
 namespace Integration{
 
 
+
+
+
 class DiscordIntegrationSettingsOption
-    : public ConfigOptionImpl<DiscordIntegrationSettingsOption, GroupOption>
+    : public GroupOption
     , private ConfigOption::Listener
+    , public ButtonListener
 {
 public:
     ~DiscordIntegrationSettingsOption();
     DiscordIntegrationSettingsOption();
 
     virtual void on_config_value_changed(void* object) override;
+    virtual void on_press(ButtonCell& button) override;
+
+
+public:
+    ButtonOption m_start_button;
+    ButtonOption m_stop_button;
 
     BooleanCheckBoxOption run_on_start;
+    ButtonOption register_slash_button;
 
     enum class CommandType{
         SlashCommands,

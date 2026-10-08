@@ -17,6 +17,7 @@
 #include "Common/Cpp/Json/JsonObject.h"
 #include "Common/Cpp/Options/KeyboardLayoutOption.h"
 #include "CommonFramework/Globals.h"
+#include "CommonFramework/Logging/Logger.h"
 #include "CommonFramework/Options/CheckForUpdatesOption.h"
 #include "CommonFramework/Options/ResolutionOption.h"
 #include "CommonFramework/Options/Environment/SleepSuppressOption.h"
@@ -48,6 +49,7 @@ const std::set<std::string> TOKENS{
     "e8d168bc482e96553ea9f9ecaea5a817474dbccc2a6a228a6bde67f2b2aa2889", //  James' token.
     "7555b7c63481cad42306718c67e7f9def5bfd1da8f6cd299ccd3d7dc95f307ae", //  Kuro's token.
     "3d475b46d121fc24559d100de2426feaa53cd6578aac2817c4857a610ccde2dd", //  kichi's token.
+    "9b41db8175b5f248a78e738c7bd63a36e33b57953cb4e80ccdd13c2a7e892eec", //  Dalton's token.
 };
 
 
@@ -139,9 +141,22 @@ GlobalSettings::GlobalSettings()
 #endif
     )
     , THEME(CONSTRUCT_TOKEN)
-    , USE_PADDLE_OCR(
-        "<b>Enable PaddleOCR:</b><br>"
-        "Use PaddleOCR instead of Tesseract for OCR.",
+    , OCR_LIBRARY(
+        "<b>OCR library:",
+        {
+            {OcrLibrary::PADDLE_OCR,         "paddle-ocr",           "Paddle OCR"},
+            {OcrLibrary::TESSERACT,            "tesseract",              "Tesseract"},
+        },
+        LockMode::LOCK_WHILE_RUNNING,
+        OcrLibrary::PADDLE_OCR
+    )
+    , OCR_WARNING(
+        "WARNING: If you change the OCR library away from the default (PaddleOCR), you must ensure that you have the necessary resource downloaded. "
+        "Otherwise, the programs that use OCR will throw an error."
+    )
+    , USE_GPU_FOR_ML_INFERENCE(
+        "<b>Use GPU for Machine learning inference:</b><br>"
+        "Use the GPU by default for machine learning. Will fall-back to CPU if using the GPU fails.",
         LockMode::UNLOCK_WHILE_RUNNING,
         false
     )
@@ -151,14 +166,16 @@ GlobalSettings::GlobalSettings()
         "Set the size/position of the window. Takes effect immediately.<br>"
         "Use this to easily set the window to a specific resolution for streaming alignment.",
         1280, 1000,
-        0, 0
+        0, 0,
+        false
     )
     , LOG_WINDOW_SIZE(
         CONSTRUCT_TOKEN,
         "Output Window Size/Position:",
         "Set the size/position of the output window. Takes effect immediately.<br>",
         600, 1200,
-        0, 0
+        0, 0,
+        false
     )
     , LOG_WINDOW_STARTUP(
         "<b>Open Output Window at startup:</b>",
@@ -203,6 +220,11 @@ GlobalSettings::GlobalSettings()
         LockMode::UNLOCK_WHILE_RUNNING,
         false
     )
+    , DUMP_VIDEO_FORMATS(
+        "<b>Dump Video Formats:</b><br>Log all video formats supported by your capture card.",
+        LockMode::UNLOCK_WHILE_RUNNING,
+        false
+    )
     , SAVE_DEBUG_IMAGES(
         "<b>Save Debug Images:</b><br>"
         "If the program fails to read something when it should succeed, save the image for debugging purposes.",
@@ -233,6 +255,11 @@ GlobalSettings::GlobalSettings()
         LockMode::LOCK_WHILE_RUNNING,
         64, 4, 255
     )
+    , DEVICE_LOGGING_FLAG(
+        "<b>Configure Device-Specific Debug Logging:</b>",
+        LockMode::LOCK_WHILE_RUNNING,
+        0
+    )
     , ENABLE_LIFETIME_SANITIZER0(
         "<b>Enable Lifetime Sanitizer: (for debugging)</b><br>"
         "Check for C++ object lifetime violations. Terminate program with stack dump if violations are found. "
@@ -254,7 +281,14 @@ GlobalSettings::GlobalSettings()
     PA_ADD_OPTION(STATS_FILE);
     PA_ADD_OPTION(TEMP_FOLDER);
     PA_ADD_OPTION(THEME);
-    PA_ADD_OPTION(USE_PADDLE_OCR);
+    PA_ADD_OPTION(USE_GPU_FOR_ML_INFERENCE);
+
+    // gated behind Dev mode. see GlobalSettings::load_json
+    PA_ADD_OPTION(OCR_LIBRARY);
+    // PA_ADD_OPTION(OCR_WARNING); // TODO: enable this when Tesseract is no longer a default resource.
+    PA_ADD_OPTION(RESOURCE_DOWNLOAD_TABLE);
+    PA_ADD_OPTION(DOWNLOAD_ERROR);
+
     PA_ADD_OPTION(WINDOW_SIZE);
     PA_ADD_OPTION(LOG_WINDOW_SIZE);
     PA_ADD_OPTION(LOG_WINDOW_STARTUP);
@@ -275,7 +309,10 @@ GlobalSettings::GlobalSettings()
 
     PA_ADD_STATIC(m_advanced_options);
     PA_ADD_OPTION(LOG_EVERYTHING);
+    PA_ADD_OPTION(DUMP_VIDEO_FORMATS);
     PA_ADD_OPTION(SAVE_DEBUG_IMAGES);
+
+    // gated behind Dev mode. see GlobalSettings::load_json
     PA_ADD_OPTION(SAVE_DEBUG_VIDEOS_ON_SWITCH);
 //    PA_ADD_OPTION(NAUGHTY_MODE);
 //    PA_ADD_OPTION(HIDE_NOTIF_DISCORD_LINK);
@@ -286,6 +323,9 @@ GlobalSettings::GlobalSettings()
     PA_ADD_OPTION(VIDEO_PIPELINE);
     PA_ADD_OPTION(COMMAND_QUEUE_LIMIT);
 
+    // gated behind Dev mode. see GlobalSettings::load_json
+    PA_ADD_OPTION(DEVICE_LOGGING_FLAG);
+
     PA_ADD_OPTION(ENABLE_LIFETIME_SANITIZER0);
 
 #ifdef PA_OFFICIAL
@@ -293,6 +333,12 @@ GlobalSettings::GlobalSettings()
 #endif
 
     PA_ADD_OPTION(DEVELOPER_TOKEN);
+
+    OCR_LIBRARY.set_visibility(ConfigOptionState::HIDDEN);
+    RESOURCE_DOWNLOAD_TABLE.set_visibility(ConfigOptionState::HIDDEN);
+    DOWNLOAD_ERROR.set_visibility(ConfigOptionState::HIDDEN);
+    SAVE_DEBUG_VIDEOS_ON_SWITCH.set_visibility(ConfigOptionState::HIDDEN);
+    DEVICE_LOGGING_FLAG.set_visibility(ConfigOptionState::HIDDEN);
 
     GlobalSettings::on_config_value_changed(this);
     ENABLE_LIFETIME_SANITIZER0.add_listener(*this);
@@ -309,8 +355,14 @@ void GlobalSettings::load_json(const JsonValue& json){
     const bool developer_mode = PreloadSettings::instance().DEVELOPER_MODE;
     BatchOption::load_json(json);
 
-    USE_PADDLE_OCR.set_visibility(developer_mode ? ConfigOptionState::ENABLED : ConfigOptionState::HIDDEN);
-    SAVE_DEBUG_VIDEOS_ON_SWITCH.set_visibility(developer_mode ? ConfigOptionState::ENABLED : ConfigOptionState::HIDDEN);
+    ConfigOptionState devmode_visibility = developer_mode
+        ? ConfigOptionState::ENABLED
+        : ConfigOptionState::HIDDEN;
+    OCR_LIBRARY.set_visibility(devmode_visibility);
+    RESOURCE_DOWNLOAD_TABLE.set_visibility(devmode_visibility);
+    DOWNLOAD_ERROR.set_visibility(devmode_visibility);
+    SAVE_DEBUG_VIDEOS_ON_SWITCH.set_visibility(devmode_visibility);
+    DEVICE_LOGGING_FLAG.set_visibility(devmode_visibility);
 
     //  Remake this to update the color.
     m_discord_settings.set_text(
@@ -428,17 +480,15 @@ void GlobalSettings::on_config_value_changed(void* object){
     }
 }
 
-void GlobalSettings::on_press(){
+void GlobalSettings::on_press(ButtonCell& button){
     // Open the runtime base folder in the system file manager
     QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(RUNTIME_BASE_PATH())));
 }
 
+void GlobalSettings::connect_row_with_download(const std::string& resource_slug, std::shared_ptr<ResourceDownload>& download_ptr){
+    RESOURCE_DOWNLOAD_TABLE.connect_row_with_download(resource_slug, download_ptr);
+}
 
-
-
-
-
-PanelDescriptorWrapper<GlobalSettings_Descriptor, GlobalSettingsPanel> GlobalSettings_Descriptor::INSTANCE;
 
 GlobalSettings_Descriptor::GlobalSettings_Descriptor()
     : PanelDescriptor(

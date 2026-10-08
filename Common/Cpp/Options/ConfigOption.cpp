@@ -122,6 +122,11 @@ void ConfigOption::report_program_state(bool program_is_running){
     Data& data = *m_data;
     data.listeners.run_method(&Listener::on_program_state_changed, program_is_running);
 }
+void ConfigOption::report_options_changed(){
+    auto scope = m_lifetime_sanitizer.check_scope();
+    Data& data = *m_data;
+    data.listeners.run_method(&Listener::on_config_options_changed);
+}
 void ConfigOption::report_value_changed(void* object){
     auto scope = m_lifetime_sanitizer.check_scope();
     Data& data = *m_data;

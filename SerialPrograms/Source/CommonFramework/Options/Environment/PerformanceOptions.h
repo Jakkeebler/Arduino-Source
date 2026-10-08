@@ -12,6 +12,7 @@
 #include "CommonFramework/Options/ThreadPoolOption.h"
 #include "ProcessPriorityOption.h"
 #include "ProcessorLevelOption.h"
+#include "CoreAffinityOption.h"
 
 namespace PokemonAutomation{
 
@@ -22,7 +23,9 @@ public:
         : GroupOption(
             "Performance",
             LockMode::LOCK_WHILE_RUNNING,
-            GroupOption::EnableMode::ALWAYS_ENABLED, true
+            GroupOption::EnableMode::ALWAYS_ENABLED,
+            true,
+            false
         )
         , REALTIME_THREAD_PRIORITY(
             "<b>Realtime Thread Priority:</b><br>"
@@ -69,6 +72,9 @@ public:
         )
     {
         PA_ADD_OPTION(PROCESSOR_LEVEL);
+#ifdef _WIN32
+        PA_ADD_OPTION(CORE_AFFINITY);
+#endif
 
         PA_ADD_OPTION(REALTIME_THREAD_PRIORITY);
         PA_ADD_OPTION(INFERENCE_PIVOT_PRIORITY);
@@ -77,11 +83,15 @@ public:
         PA_ADD_OPTION(REALTIME_THREAD_POOL);
         PA_ADD_OPTION(NORMAL_THREAD_POOL);
 
-        PA_ADD_OPTION(PRECISE_WAKE_MARGIN);
+        //  Used only by sys-botbase 2 which has been removed.
+//        PA_ADD_OPTION(PRECISE_WAKE_MARGIN);
     }
 
 public:
     ProcessorLevelOption PROCESSOR_LEVEL;
+#ifdef _WIN32
+    CoreAffinityOption CORE_AFFINITY;
+#endif
 
     ThreadPriorityOption REALTIME_THREAD_PRIORITY;
     ThreadPriorityOption INFERENCE_PIVOT_PRIORITY;

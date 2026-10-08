@@ -420,7 +420,7 @@ void DonutMaker::open_berry_menu_from_ansha(SingleSwitchProgramEnvironment& env,
 void load_backup_save(SingleSwitchProgramEnvironment& env, ProControllerContext& context){
     DonutMaker_Descriptor::Stats& stats = env.current_stats<DonutMaker_Descriptor::Stats>();
 
-    env.log("Making backup save.");
+    env.log("Loading backup save.");
 
     go_home(env.console, context);
     const bool backup_save = true;
@@ -601,9 +601,14 @@ bool DonutMaker::donut_iteration(
     add_berries_and_make_donut(env, context);
 
     // Read flavor power and check if they match user requirement and should be kept:
-    if (match_powers(env, context, kept_counts)){
-        return true;
+    try{
+        if (match_powers(env, context, kept_counts)){
+            return true;
+        }
+    }catch (OperationFailedException&){
+        env.log("Encountered error... SR'ing...", COLOR_RED);
     }
+
 
     load_backup_save(env, context);
     return false;
@@ -627,8 +632,8 @@ void DonutMaker::program(SingleSwitchProgramEnvironment& env, ProControllerConte
         }
     }
 
-    //  Mash button B to let Switch register the controller
-    pbf_mash_button(context, BUTTON_B, 200ms);
+    //  Connect the controller.
+    require_player(env.console, context, BUTTON_B);
 
     reset_map_filter_state(env, context);
 

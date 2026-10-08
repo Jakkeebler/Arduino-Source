@@ -13,6 +13,7 @@
 #include "CommonFramework/Options/Environment/PerformanceOptions.h"
 #include "CommonFramework/Notifications/ProgramInfo.h"
 #include "CommonFramework/Notifications/ProgramNotifications.h"
+#include "Controllers/NullController.h"
 #include "NintendoSwitch/NintendoSwitch_Settings.h"
 #include "NintendoSwitch_SingleSwitchProgramOption.h"
 #include "NintendoSwitch_SingleSwitchProgramSession.h"
@@ -134,12 +135,25 @@ void SingleSwitchProgramSession::internal_stop_program(){
     }
 }
 void SingleSwitchProgramSession::internal_run_program(){
-    m_option.options().reset_state();
+    CancellableHolder<CancellableScope> scope;
+    {
+        std::lock_guard<Mutex> lg(program_lock());
+        if (current_state() != ProgramState::RUNNING){
+            return;
+        }
+        m_scope.store(&scope, std::memory_order_release);
+    }
+    bool success = download_prereqs(scope);
+    {
+        std::lock_guard<Mutex> lg(program_lock());
+        m_scope.store(nullptr, std::memory_order_release);
+    }
 
-    if (!m_system.controller_session().ready()){
-        report_error("Cannot Start: The controller is not ready.");
+    if (!success){
         return;
     }
+
+    m_option.options().reset_state();
 
     SleepSuppressScope sleep_scope(GlobalSettings::instance().SLEEP_SUPPRESS->PROGRAM_RUNNING);
 
@@ -149,7 +163,11 @@ void SingleSwitchProgramSession::internal_run_program(){
         m_option.descriptor().display_name(),
         timestamp()
     );
+    NullController null_controller(m_system.logger());
     AbstractController* controller = m_system.controller_session().controller();
+    if (controller == nullptr){
+        controller = &null_controller;
+    }
     ControllerContext<AbstractController> context(*controller);
     SingleSwitchProgramEnvironment env(
         program_info,
