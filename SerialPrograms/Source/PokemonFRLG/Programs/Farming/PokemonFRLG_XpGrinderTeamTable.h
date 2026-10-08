@@ -23,6 +23,7 @@
 #include "Common/Cpp/Options/EditableTableOption.h"
 #include "Common/Cpp/Options/EnumDropdownOption.h"
 #include "CommonTools/Options/StringSelectOption.h"
+#include "PokemonFRLG/Programs/Farming/PokemonFRLG_EvolutionPolicy.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MovePlan.h"
 
@@ -56,6 +57,12 @@ public:
     StringSelectCell desired_move[4];     //  slug; "" = no preference for this slot
     EnumDropdownCell<OnUnknownOffered> on_unknown;
 
+    //  FRO-226: per-slot evolution policy. evolution_stone is only meaningful
+    //  when evolution_policy == Stone; it names the item USE_EVOLUTION_STONE_BUTTON
+    //  uses for this row's explicit evolution step.
+    EnumDropdownCell<EvolutionPolicyType> evolution_policy;
+    EnumDropdownCell<EvolutionStoneItem> evolution_stone;
+
 private:
     //  Rebuild chain_move_db's contents based on `species_slug`. Saves and
     //  restores each move cell's selected slug across the swap (drops to
@@ -76,6 +83,10 @@ public:
     std::string                species_for(size_t pokemon) const;
     std::array<std::string, 4> desired_for(size_t pokemon) const;
     OnUnknownOffered           on_unknown_for(size_t pokemon) const;
+
+    //  FRO-226.
+    EvolutionPolicyType        evolution_policy_for(size_t pokemon) const;
+    EvolutionStoneItem         evolution_stone_for(size_t pokemon) const;
 
     //  Auto-update a row's species cell. Used by the party scanner after
     //  detecting a new dex# (initial scan or post-evolution rescan). Returns
@@ -124,10 +135,17 @@ public:
     //  not pin in the table. `known_current` is the caller's cached view of the
     //  Pokemon's four current moves (needed to judge accept-vs-decline).
     //  Species typing for the STAB bonus is read from the row's species cell.
+    //
+    //  use_recommended: a row whose four desired-move cells are all blank falls
+    //  back to the species' recommended moveset (recommended_desired_moves())
+    //  as its pinned set. A row with any move filled in is never touched.
+    //  evolution_protection: see MoveLearnContext.
     MoveLearnDecider make_decider(
         size_t pokemon,
         bool auto_rank,
-        const std::array<std::string, 4>& known_current
+        const std::array<std::string, 4>& known_current,
+        bool use_recommended = true,
+        bool evolution_protection = true
     ) const;
 
     //  Validate desired moves against the row's species evolution-chain

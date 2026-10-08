@@ -36,6 +36,7 @@
 #include "PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.h"
 #include "PokemonFRLG/Programs/PokemonFRLG_BattleMenuNavigation.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h"
+#include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnStateMachine.h"
 #include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_LearnMoveDialogReader.h"
 #include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_ForgetMoveScreen.h"
 #include "PokemonFRLG_Navigation.h"
@@ -642,12 +643,251 @@ void flee_battle(ConsoleHandle& console, ProControllerContext& context){
     }
 }
 
+namespace{
+
+//  MoveLearnResult now lives in PokemonFRLG_Navigation.h: run_move_learn_flow
+//  is called from outside this file (the explicit stone-evolution action),
+//  so its result type can't stay local to this anonymous namespace.
+
+//  Sleep between voting snapshots. The wait is issued as a controller command so
+//  it also lets the capture card deliver a genuinely new frame.
+void vote_pause(ProControllerContext& context, const MoveLearnConfig& config){
+    pbf_wait(context, config.vote_interval);
+    context.wait_for_all_requests();
+}
+
+//  One voting round on the offered move: `vote_samples` independent snapshots.
+//  "" if no value reached a majority.
+std::string read_new_move_round(
+    ConsoleHandle& console, ProControllerContext& context,
+    Language language, const MoveLearnConfig& config
+){
+    LearnMoveDialogReader reader(COLOR_RED);
+    std::vector<std::string> samples;
+    for (size_t i = 0; i < std::max<size_t>(1, config.vote_samples); i++){
+        if (i != 0){
+            vote_pause(context, config);
+        }
+        VideoSnapshot snap = console.video().snapshot();
+        samples.push_back(reader.read_new_move(console.logger(), language, snap));
+    }
+    std::string voted = vote_string(samples);
+    if (voted.empty()){
+        std::string all;
+        for (const std::string& s : samples){
+            all += (all.empty() ? "'" : ", '") + s + "'";
+        }
+        console.log("Move learn: new-move reads did not agree [" + all + "].", COLOR_RED);
+    }
+    return voted;
+}
+
+//  One voting round on the forget screen's four moves.
+bool read_move_list_round(
+    ConsoleHandle& console, ProControllerContext& context,
+    Language language, const MoveLearnConfig& config,
+    std::array<std::string, 4>& out
+){
+    ForgetMoveScreenReader reader(COLOR_RED);
+    std::vector<std::array<std::string, 4>> samples;
+    for (size_t i = 0; i < std::max<size_t>(1, config.vote_samples); i++){
+        if (i != 0){
+            vote_pause(context, config);
+        }
+        VideoSnapshot snap = console.video().snapshot();
+        samples.push_back(reader.read_moves(console.logger(), language, snap));
+    }
+    if (vote_move_list(samples, out)){
+        return true;
+    }
+    std::string all;
+    for (const auto& s : samples){
+        all += std::string(all.empty() ? "[" : " vs [") +
+            s[0] + "|" + s[1] + "|" + s[2] + "|" + s[3] + "]";
+    }
+    console.log("Move learn: forget-screen reads did not agree " + all + ".", COLOR_RED);
+    return false;
+}
+
+//  Backs out of the forget screen. The game answers with the same "Give up on
+//  learning <Move>?" prompt a declined offer produces.
+void cancel_forget_screen(ConsoleHandle& console, ProControllerContext& context){
+    console.log("Move learn: cancelling out of the forget screen.", COLOR_RED);
+    pbf_press_button(context, BUTTON_B, 200ms, 0ms);
+    context.wait_for_all_requests();
+}
+
+}  //  namespace
+
+//  Drives one move-learn prompt through
+//      AwaitingPrompt -> ReadingNewMove -> ReadingMoveList
+//                     -> AwaitingForgetChoice -> Confirmed
+//  Every edge is bounded: a state that disagrees with itself or times out
+//  config.max_consecutive_failures times in a row takes its recovery path
+//  instead of retrying forever --
+//      ReadingNewMove       -> treat the move as unknown (decider's on_unknown policy)
+//      ReadingMoveList      -> on_unknown policy: Stop halts, Decline cancels
+//      AwaitingForgetChoice -> carry on; the caller's own watchers are the backstop
+MoveLearnResult run_move_learn_flow(
+    ConsoleHandle& console, ProControllerContext& context,
+    const MoveLearnDecider* decider, Language language,
+    const MoveLearnConfig& config
+){
+    using Outcome = MoveLearnStateMachine::Outcome;
+    using Step = MoveLearnStateMachine::Step;
+    MoveLearnStateMachine flow(config.max_consecutive_failures);
+
+    //  AwaitingPrompt. The caller's BattleLearnDialogWatcher is what got us
+    //  here, so this edge is already satisfied; its own timeout/retry is the
+    //  caller's 30 s watch window and error budget.
+    flow.report(Outcome::Success);
+
+    //  Without a decider every offer is declined unread.
+    if (decider == nullptr){
+        pbf_press_button(context, BUTTON_B, 200ms, 0ms);
+        flow.finish();
+        return MoveLearnResult::Declined;
+    }
+
+    //  ReadingNewMove.
+    std::string new_move;
+    while (true){
+        new_move = read_new_move_round(console, context, language, config);
+        if (!new_move.empty()){
+            flow.report(Outcome::Success);
+            break;
+        }
+        Step step = flow.report(Outcome::Disagreement);
+        if (step == Step::Recover){
+            console.log(
+                "Move learn: new move unreadable after " +
+                std::to_string(config.max_consecutive_failures) +
+                " rounds; applying the on-unknown policy.",
+                COLOR_RED
+            );
+            break;
+        }
+        console.log("Move learn: re-reading the new move.", COLOR_ORANGE);
+        vote_pause(context, config);
+    }
+
+    MoveLearnDecider::FirstAction action = decider->decide_accept_or_decline(new_move);
+    const std::string deferral = decider->evolution_deferral_reason(new_move);
+    console.log(
+        "Move learn dialog: new move OCR='" + new_move +
+        "', decision=" + (
+            action == MoveLearnDecider::FirstAction::Stop ? "Stop" :
+            action == MoveLearnDecider::FirstAction::Replace ? "Replace" : "Decline"
+        ) + (deferral.empty() ? "" : " (evolution protection: " + deferral + ")")
+    );
+    if (action == MoveLearnDecider::FirstAction::Stop){
+        console.log("Decider returned Stop (battle dialog still active).");
+        return MoveLearnResult::Stop;
+    }
+    if (action == MoveLearnDecider::FirstAction::Decline){
+        //  Do NOT report a learn. Declining changes nothing about the moveset,
+        //  and reporting LearnHandled made the caller run a full party-menu
+        //  rescan after every declined level-up move -- slow, and pointless.
+        pbf_press_button(context, BUTTON_B, 200ms, 0ms);
+        flow.finish();
+        return MoveLearnResult::Declined;
+    }
+
+    //  Accept the prompt and walk the forget-move screen.
+    pbf_press_button(context, BUTTON_A, 200ms, 0ms);
+    context.wait_for_all_requests();
+
+    //  ReadingMoveList, first the screen itself. The retry budget below covers
+    //  both waiting for the screen and reading it.
+    while (true){
+        ForgetMoveScreenWatcher forget_screen(COLOR_RED);
+        int waited = wait_until(console, context, config.screen_timeout, { forget_screen });
+        if (waited >= 0){
+            break;
+        }
+        Step step = flow.report(Outcome::Timeout);
+        if (step == Step::Recover){
+            //  The detector's thresholds are uncalibrated, so a miss here is not
+            //  proof the screen is absent. Read anyway; the vote rejects garbage.
+            console.log("Forget-move screen not detected; reading it anyway.", COLOR_RED);
+            break;
+        }
+        console.log("Move learn: forget-move screen not detected, waiting again.", COLOR_ORANGE);
+    }
+
+    std::array<std::string, 4> current_moves;
+    while (true){
+        if (read_move_list_round(console, context, language, config, current_moves)){
+            flow.report(Outcome::Success);
+            break;
+        }
+        Step step = flow.report(Outcome::Disagreement);
+        if (step == Step::Recover){
+            //  Forgetting a slot we could not read could destroy a pinned move.
+            if (decider->on_unknown() == OnUnknownOffered::Stop){
+                console.log("Move list unreadable; on-unknown policy is Stop.", COLOR_RED);
+                return MoveLearnResult::Stop;
+            }
+            console.log("Move list unreadable; declining the new move instead.", COLOR_RED);
+            cancel_forget_screen(console, context);
+            flow.finish();
+            return MoveLearnResult::Cancelled;
+        }
+        console.log("Move learn: re-reading the move list.", COLOR_ORANGE);
+        vote_pause(context, config);
+    }
+    console.log(
+        std::string("Forget-screen current moves: [") +
+        current_moves[0] + "|" + current_moves[1] + "|" +
+        current_moves[2] + "|" + current_moves[3] + "]"
+    );
+
+    //  AwaitingForgetChoice.
+    int forget_slot = decider->pick_forget_slot(new_move, current_moves);
+    if (forget_slot < 0){
+        console.log("Move learn: every current move is pinned; nothing may be forgotten.", COLOR_RED);
+        cancel_forget_screen(console, context);
+        flow.finish();
+        return MoveLearnResult::Cancelled;
+    }
+    console.log("Forgetting slot " + std::to_string(forget_slot + 1) + ".");
+
+    //  Cursor starts on the top move (slot 0). Step down to target.
+    for (int i = 0; i < forget_slot; i++){
+        pbf_press_dpad(context, DPAD_DOWN, 160ms, 320ms);
+    }
+    pbf_press_button(context, BUTTON_A, 200ms, 0ms);
+    context.wait_for_all_requests();
+
+    //  Confirm the game acted on it: the "1, 2, and... poof!" dialog starts.
+    //  Only waits, never re-presses -- a second A could answer a later prompt.
+    while (true){
+        AdvanceBattleDialogWatcher advance_dialog(COLOR_RED);
+        int waited = wait_until(console, context, config.confirm_timeout, { advance_dialog });
+        if (waited >= 0){
+            flow.report(Outcome::Success);
+            break;
+        }
+        Step step = flow.report(Outcome::Timeout);
+        if (step == Step::Recover){
+            console.log(
+                "Move learn: post-forget dialog not seen; carrying on (replace was already committed).",
+                COLOR_RED
+            );
+            flow.finish();
+            break;
+        }
+    }
+    return MoveLearnResult::Replaced;
+}
+
 WildBattleExit exit_wild_battle(
     ConsoleHandle& console, ProControllerContext& context,
     bool stop_on_move_learn, bool prevent_evolution,
     const MoveLearnDecider* decider,
     Language language,
-    bool* evolved_out
+    bool* evolved_out,
+    const MoveLearnConfig* learn_config
 ){
     // For move learning, there are two dialog selection boxes in a row.
     // Decline path: press B on the first, then A on the second (don't learn).
@@ -781,73 +1021,27 @@ WildBattleExit exit_wild_battle(
                 pbf_press_button(context, BUTTON_A, 200ms, 0ms);
                 continue;
             }
-            //  First iteration of the learn dialog. Decide accept vs decline.
+            //  First iteration of the learn dialog. Hand it to the move-learn
+            //  state machine (voted reads, bounded retries, explicit recovery).
             {
-                MoveLearnDecider::FirstAction action = MoveLearnDecider::FirstAction::Decline;
-                std::string new_move_slug;
-                if (decider != nullptr){
-                    LearnMoveDialogReader dialog_reader(COLOR_RED);
-                    VideoSnapshot snap = console.video().snapshot();
-                    new_move_slug = dialog_reader.read_new_move(console.logger(), language, snap);
-                    action = decider->decide_accept_or_decline(new_move_slug);
-                    console.log(
-                        "Move learn dialog: new move OCR='" + new_move_slug +
-                        "', decision=" + (
-                            action == MoveLearnDecider::FirstAction::Stop ? "Stop" :
-                            action == MoveLearnDecider::FirstAction::Replace ? "Replace" : "Decline"
-                        )
-                    );
-                }
-                if (action == MoveLearnDecider::FirstAction::Stop){
-                    console.log("Decider returned Stop (battle dialog still active).");
+                const MoveLearnConfig default_config;
+                MoveLearnResult result = run_move_learn_flow(
+                    console, context, decider, language,
+                    learn_config != nullptr ? *learn_config : default_config
+                );
+                switch (result){
+                case MoveLearnResult::Stop:
                     return WildBattleExit::StopBattleStuck;
-                }
-                if (action == MoveLearnDecider::FirstAction::Replace){
-                    //  Accept the prompt and walk the forget-move screen.
-                    pbf_press_button(context, BUTTON_A, 200ms, 0ms);
-                    context.wait_for_all_requests();
-
-                    ForgetMoveScreenWatcher forget_screen(COLOR_RED);
-                    int waited = wait_until(
-                        console, context,
-                        std::chrono::milliseconds(5000),
-                        { forget_screen }
-                    );
-                    if (waited < 0){
-                        console.log("Forget-move screen not detected after 5s; falling back to fixed wait.", COLOR_RED);
-                        pbf_wait(context, 1500ms);
-                        context.wait_for_all_requests();
-                    }
-
-                    ForgetMoveScreenReader forget_reader(COLOR_RED);
-                    VideoSnapshot forget_snap = console.video().snapshot();
-                    auto current_moves = forget_reader.read_moves(console.logger(), language, forget_snap);
-                    console.log(
-                        std::string("Forget-screen current moves: [") +
-                        current_moves[0] + "|" + current_moves[1] + "|" +
-                        current_moves[2] + "|" + current_moves[3] + "]"
-                    );
-                    int forget_slot = decider->pick_forget_slot(new_move_slug, current_moves);
-                    console.log("Forgetting slot " + std::to_string(forget_slot + 1) + ".");
-
-                    //  Cursor starts on the top move (slot 0). Step down to target.
-                    for (int i = 0; i < forget_slot; i++){
-                        pbf_press_dpad(context, DPAD_DOWN, 160ms, 320ms);
-                    }
-                    pbf_press_button(context, BUTTON_A, 200ms, 0ms);
-                    context.wait_for_all_requests();
+                case MoveLearnResult::Replaced:
                     move_learned = true;
                     //  Post-replace dialogs ("1, 2, and... poof!", "X learned Y!")
                     //  advance with B in subsequent iterations.
-                    continue;
+                    break;
+                case MoveLearnResult::Declined:
+                case MoveLearnResult::Cancelled:
+                    rejected_first_box = true;
+                    break;
                 }
-                //  Decline path: press B on the first prompt.
-                //  Do NOT set move_learned here. Declining changes nothing about
-                //  the moveset, but reporting LearnHandled made the caller run a
-                //  full party-menu rescan after every declined level-up move --
-                //  slow, and pointless.
-                pbf_press_button(context, BUTTON_B, 200ms, 0ms);
-                rejected_first_box = true;
             }
             continue;
         default:

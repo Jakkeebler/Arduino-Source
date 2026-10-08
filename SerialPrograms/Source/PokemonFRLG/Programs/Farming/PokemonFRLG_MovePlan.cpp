@@ -404,6 +404,21 @@ std::array<std::string, 4> suggest_desired_moves(
 }
 
 
+std::array<std::string, 4> recommended_desired_moves(
+    const std::string& species_slug,
+    const std::array<std::string, 4>& user_desired,
+    int from_level,
+    const std::array<std::string, 4>& current_moves
+){
+    for (const std::string& m : user_desired){
+        if (!m.empty()){
+            return user_desired;   //  The user's own picks always win.
+        }
+    }
+    return suggest_desired_moves(species_slug, from_level, current_moves);
+}
+
+
 }
 }
 }

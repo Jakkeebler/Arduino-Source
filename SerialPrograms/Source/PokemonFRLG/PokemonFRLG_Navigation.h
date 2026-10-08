@@ -33,6 +33,34 @@ enum class BattleResult{
 };
 
 class MoveLearnDecider;
+struct MoveLearnConfig;
+
+//  How a move-learn prompt ended. Exposed (not file-local) so callers other
+//  than exit_wild_battle -- e.g. the explicit stone-evolution action in
+//  PokemonFRLG_EvolutionPolicy -- can drive the same hardened flow for a
+//  post-evolution "wants to learn a move" prompt that happens outside of a
+//  battle exit, without re-implementing any move-learn OCR.
+enum class MoveLearnResult{
+    Declined,   //  Said no to the prompt; the "give up on learning?" prompt follows.
+    Replaced,   //  A slot was forgotten; post-replace dialogs follow.
+    Cancelled,  //  Backed out of the forget screen; same follow-up prompt as Declined.
+    Stop,       //  Halt for a human. The dialog is still up.
+};
+
+//  Drives one "<Pokemon> wants to learn <Move>!" prompt through the hardened
+//  Move Learn Decider / state machine (FRO-189): voted OCR reads, bounded
+//  retries, explicit recovery, then either declines, replaces a slot, or
+//  surfaces Stop for the caller to halt on. This is the SAME dialog box the
+//  game shows regardless of what triggered it -- a battle level-up or a
+//  non-battle evolution (e.g. an evolution stone) -- so any caller already
+//  sitting on that prompt can reuse this directly instead of adding a second
+//  OCR path. `decider` must not be nullptr for the move/decline logic; a null
+//  decider declines unread (see exit_wild_battle for a working example caller).
+MoveLearnResult run_move_learn_flow(
+    ConsoleHandle& console, ProControllerContext& context,
+    const MoveLearnDecider* decider, Language language,
+    const MoveLearnConfig& config
+);
 
 //  Outcome of exit_wild_battle. Distinguishing these is critical: in the
 //  StopBattleStuck case the move-learn dialog is still on-screen and the
@@ -111,12 +139,16 @@ void flee_battle(ConsoleHandle& console, ProControllerContext& context);
 //  during the battle exit. A Pokemon can evolve without learning a move, so
 //  callers that cache species/moves must rescan on this signal as well as on
 //  WildBattleExit::LearnHandled. Never set to false — initialize it yourself.
+//  learn_config: optional tuning for the move-learn flow (voting sample count and
+//  interval, retry caps, timeouts). nullptr uses the MoveLearnConfig defaults.
+//  Move-learn reads are multi-frame voted; see PokemonFRLG_MoveLearnStateMachine.h.
 WildBattleExit exit_wild_battle(
     ConsoleHandle& console, ProControllerContext& context,
     bool stop_on_move_learn, bool prevent_evolution,
     const MoveLearnDecider* decider = nullptr,
     Language language = Language::English,
-    bool* evolved_out = nullptr
+    bool* evolved_out = nullptr,
+    const MoveLearnConfig* learn_config = nullptr
 );
 
 // Starting from the start menu, a sub-screen of the start menu, or the overworld, navigate to the party screen

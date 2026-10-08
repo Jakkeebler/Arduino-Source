@@ -35,6 +35,12 @@ int test_pokemonFRLG_LearnMoveDialogReader(const ImageViewRGB32& image, const st
 int test_pokemonFRLG_ForgetMoveScreenDetector(const ImageViewRGB32& image, bool target);
 int test_pokemonFRLG_ForgetMoveScreenReader(const ImageViewRGB32& image, const std::vector<std::string>& expected);
 
+//  Logic-only: ignores the file contents. See the comment in PokemonFRLG_Tests.cpp.
+int test_pokemonFRLG_MoveLearnDecider(const std::string& test_file_path);
+
+//  Logic-only: ignores the file contents. See the comment in PokemonFRLG_Tests.cpp.
+int test_pokemonFRLG_EvolutionPolicy(const std::string& test_file_path);
+
 }
 
 #endif

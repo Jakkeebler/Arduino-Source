@@ -145,6 +145,19 @@ std::array<std::string, 4> suggest_desired_moves(
 );
 
 
+//  Species-level default moveset for a Pokemon the user left unconfigured.
+//  Returns `user_desired` untouched if it names any move at all; only an
+//  entirely blank set falls back to suggest_desired_moves(). The defaults are
+//  derived from the species' learnsets and typing rather than stored, so there
+//  is no separate per-species file to keep in step with Learnsets.json.
+std::array<std::string, 4> recommended_desired_moves(
+    const std::string& species_slug,
+    const std::array<std::string, 4>& user_desired,
+    int from_level = -1,
+    const std::array<std::string, 4>& current_moves = {}
+);
+
+
 }
 }
 }
