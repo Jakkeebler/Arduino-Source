@@ -427,7 +427,7 @@ constexpr int KANTO_FORCE_BLOCKED_COUNT = 0;
 #ifndef PokemonAutomation_PokemonFRLG_KantoGoals_Extended_H
 #define PokemonAutomation_PokemonFRLG_KantoGoals_Extended_H
 
-#include "PokemonFRLG_KantoMapNavigator.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_KantoMapNavigator.h"
 
 namespace PokemonAutomation{{
 namespace NintendoSwitch{{

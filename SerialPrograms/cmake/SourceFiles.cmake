@@ -1586,6 +1586,14 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B5b.h
     Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B5c.cpp
     Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B5c.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B8a.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B8a.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B8b.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B8b.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B8c.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B8c.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B8d.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B8d.h
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_EvTrainer.cpp
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_EvTrainer.h
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_ItemDuplication.cpp

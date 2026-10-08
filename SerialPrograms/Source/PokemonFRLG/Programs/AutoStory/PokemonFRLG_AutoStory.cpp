@@ -21,6 +21,10 @@
 #include "PokemonFRLG_AutoStory_Segment_B5a.h"
 #include "PokemonFRLG_AutoStory_Segment_B5b.h"
 #include "PokemonFRLG_AutoStory_Segment_B5c.h"
+#include "PokemonFRLG_AutoStory_Segment_B8a.h"
+#include "PokemonFRLG_AutoStory_Segment_B8b.h"
+#include "PokemonFRLG_AutoStory_Segment_B8c.h"
+#include "PokemonFRLG_AutoStory_Segment_B8d.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -248,6 +252,90 @@ public:
     }
 };
 
+class AutoStory_Segment_B8a : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B8a);
+    }
+    virtual std::string start_text() const override{
+        return "Outside the Cinnabar Gym, Volcano Badge in hand.";
+    }
+    virtual std::string end_text() const override{
+        return "Exited Seafoam Islands onto Route 20, heading for Viridian City.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B8a_seafoam_islands(env, context, options, stats);
+    }
+};
+
+class AutoStory_Segment_B8b : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B8b);
+    }
+    virtual std::string start_text() const override{
+        return "On Route 20/Viridian City, heading for the Viridian Gym.";
+    }
+    virtual std::string end_text() const override{
+        return "Earth Badge won. Outside the Viridian Gym -- all 8 badges obtained.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B8b_viridian_gym(env, context, options, stats);
+    }
+};
+
+class AutoStory_Segment_B8c : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B8c);
+    }
+    virtual std::string start_text() const override{
+        return "Outside the Viridian Gym, all 8 badges in hand.";
+    }
+    virtual std::string end_text() const override{
+        return "Standing at the entrance to Victory Road on Route 23.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B8c_route_22_23_to_victory_road(env, context, options, stats);
+    }
+};
+
+class AutoStory_Segment_B8d : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B8d);
+    }
+    virtual std::string start_text() const override{
+        return "At the entrance to Victory Road.";
+    }
+    virtual std::string end_text() const override{
+        return "At the Pokemon League gate, ready to enter the Elite Four.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B8d_victory_road(env, context, options, stats);
+    }
+};
+
 }  //  anonymous namespace
 
 
@@ -276,10 +364,10 @@ const std::vector<std::unique_ptr<AutoStory_Segment>>& ALL_AUTO_STORY_SEGMENT_LI
         add(Phase::B6b, "Surf and Strength obtained, heading for Cinnabar Island.",                    "Marsh Badge won. Outside the Cinnabar Gym.");
         add(Phase::B7a, "Outside the Cinnabar Gym, Marsh Badge in hand.",                              "Exited Pokemon Mansion, standing outside the Cinnabar Gym.");
         add(Phase::B7b, "Standing outside the Cinnabar Gym, ready to challenge it.",                   "Volcano Badge won. Outside the Cinnabar Gym.");
-        add(Phase::B8a, "Outside the Cinnabar Gym, Volcano Badge in hand.",                            "Exited Seafoam Islands onto Route 20, heading for Viridian City.");
-        add(Phase::B8b, "On Route 20/Viridian City, heading for the Viridian Gym.",                    "Earth Badge won. Outside the Viridian Gym -- all 8 badges obtained.");
-        add(Phase::B8c, "Outside the Viridian Gym, all 8 badges in hand.",                             "Standing at the entrance to Victory Road on Route 23.");
-        add(Phase::B8d, "At the entrance to Victory Road.",                                            "At the Pokemon League gate, ready to enter the Elite Four.");
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B8a>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B8b>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B8c>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B8d>());
 
         return ret;
     }();
