@@ -1582,6 +1582,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_XpGrinderTeamTable.h
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.cpp
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h
+    Source/PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnStateMachine.cpp
+    Source/PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnStateMachine.h
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_MovePlan.cpp
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_MovePlan.h
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_TeamScanner.cpp

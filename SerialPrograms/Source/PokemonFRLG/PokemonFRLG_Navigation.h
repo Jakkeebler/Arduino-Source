@@ -33,6 +33,7 @@ enum class BattleResult{
 };
 
 class MoveLearnDecider;
+struct MoveLearnConfig;
 
 //  Outcome of exit_wild_battle. Distinguishing these is critical: in the
 //  StopBattleStuck case the move-learn dialog is still on-screen and the
@@ -111,12 +112,16 @@ void flee_battle(ConsoleHandle& console, ProControllerContext& context);
 //  during the battle exit. A Pokemon can evolve without learning a move, so
 //  callers that cache species/moves must rescan on this signal as well as on
 //  WildBattleExit::LearnHandled. Never set to false — initialize it yourself.
+//  learn_config: optional tuning for the move-learn flow (voting sample count and
+//  interval, retry caps, timeouts). nullptr uses the MoveLearnConfig defaults.
+//  Move-learn reads are multi-frame voted; see PokemonFRLG_MoveLearnStateMachine.h.
 WildBattleExit exit_wild_battle(
     ConsoleHandle& console, ProControllerContext& context,
     bool stop_on_move_learn, bool prevent_evolution,
     const MoveLearnDecider* decider = nullptr,
     Language language = Language::English,
-    bool* evolved_out = nullptr
+    bool* evolved_out = nullptr,
+    const MoveLearnConfig* learn_config = nullptr
 );
 
 // Starting from the start menu, a sub-screen of the start menu, or the overworld, navigate to the party screen

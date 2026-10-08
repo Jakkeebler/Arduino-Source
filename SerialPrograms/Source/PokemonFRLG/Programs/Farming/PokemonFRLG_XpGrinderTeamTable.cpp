@@ -321,7 +321,9 @@ MoveLearnDecider XpGrinderTeamTable::make_decider(size_t pokemon) const{
 MoveLearnDecider XpGrinderTeamTable::make_decider(
     size_t pokemon,
     bool auto_rank,
-    const std::array<std::string, 4>& known_current
+    const std::array<std::string, 4>& known_current,
+    bool use_recommended,
+    bool evolution_protection
 ) const{
     //  Species typing drives the STAB bonus. An unknown/unscanned species just
     //  means no STAB weighting; ranking by raw power still works.
@@ -333,9 +335,16 @@ MoveLearnDecider XpGrinderTeamTable::make_decider(
             types = sp->types;
         }
     }
+    std::array<std::string, 4> desired = desired_for(pokemon);
+    if (use_recommended){
+        desired = recommended_desired_moves(slug, desired, -1, known_current);
+    }
+    MoveLearnContext context;
+    context.species_slug = slug;
+    context.evolution_protection = evolution_protection;
     return MoveLearnDecider(
-        desired_for(pokemon), on_unknown_for(pokemon),
-        auto_rank, std::move(types), known_current
+        std::move(desired), on_unknown_for(pokemon),
+        auto_rank, std::move(types), known_current, std::move(context)
     );
 }
 

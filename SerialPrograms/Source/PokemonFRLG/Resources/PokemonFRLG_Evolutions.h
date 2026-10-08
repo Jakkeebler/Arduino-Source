@@ -26,6 +26,20 @@ namespace PokemonFRLG{
 const std::vector<std::string>& evolution_chain_for(const std::string& species_slug);
 
 
+struct LevelEvolution{
+    std::string evolves_to;
+    int level = 0;
+};
+
+//  The level-up evolution of `species_slug`, or nullptr if it has none --
+//  fully evolved, or evolves by stone / trade / friendship (those have no level
+//  to be "one away" from). Gen-3 levels, Kanto species only.
+//
+//  This is a built-in table rather than a field in Evolutions.json: that file
+//  only lists chain membership, and the levels never change.
+const LevelEvolution* level_evolution_for(const std::string& species_slug);
+
+
 }
 }
 }

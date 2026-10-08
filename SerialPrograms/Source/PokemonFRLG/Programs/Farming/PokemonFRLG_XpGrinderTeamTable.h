@@ -124,10 +124,17 @@ public:
     //  not pin in the table. `known_current` is the caller's cached view of the
     //  Pokemon's four current moves (needed to judge accept-vs-decline).
     //  Species typing for the STAB bonus is read from the row's species cell.
+    //
+    //  use_recommended: a row whose four desired-move cells are all blank falls
+    //  back to the species' recommended moveset (recommended_desired_moves())
+    //  as its pinned set. A row with any move filled in is never touched.
+    //  evolution_protection: see MoveLearnContext.
     MoveLearnDecider make_decider(
         size_t pokemon,
         bool auto_rank,
-        const std::array<std::string, 4>& known_current
+        const std::array<std::string, 4>& known_current,
+        bool use_recommended = true,
+        bool evolution_protection = true
     ) const;
 
     //  Validate desired moves against the row's species evolution-chain
