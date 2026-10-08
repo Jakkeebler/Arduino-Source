@@ -1522,6 +1522,7 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Inference/Map/PokemonFRLG_KantoMapMasks_Generated.h
     Source/PokemonFRLG/Inference/Map/PokemonFRLG_KantoMapPathfinder.cpp
     Source/PokemonFRLG/Inference/Map/PokemonFRLG_KantoMapPathfinder.h
+    Source/PokemonFRLG/Inference/Map/PokemonFRLG_KantoGoals_Extended.h
     Source/PokemonFRLG/Inference/Sounds/PokemonFRLG_CatchFanfareDetector.cpp
     Source/PokemonFRLG/Inference/Sounds/PokemonFRLG_CatchFanfareDetector.h
     Source/PokemonFRLG/Inference/PokemonFRLG_BattleSelectionArrowDetector.cpp
@@ -1598,6 +1599,24 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory.h
     Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStoryTools.cpp
     Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStoryTools.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_00.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_00.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_01.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_01.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_02.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_02.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_03.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_03.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_04.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_04.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_05.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_05.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B3a.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B3a.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B3b.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B3b.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B3c.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B3c.h
     Source/PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.h
     Source/PokemonFRLG/Programs/PokemonFRLG_RoutePaths.cpp

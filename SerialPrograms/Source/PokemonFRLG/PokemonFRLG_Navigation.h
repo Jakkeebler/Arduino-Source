@@ -184,6 +184,16 @@ void leave_pokecenter(ConsoleHandle& console, ProControllerContext& context);
 // Combine with enter_pokecenter, leave_pokecenter, and use_teleport_from_overworld for automating healing your party
 void heal_at_pokecenter(ConsoleHandle& console, ProControllerContext& context);
 
+// Enter a Gym. Assumes the player is standing in front of its door (one tile
+// south of the door's warp tile). Same generic north-walk-until-fade
+// mechanics as enter_pokecenter -- every Gym building uses the same door
+// sprite/warp convention.
+void enter_gym(ConsoleHandle& console, ProControllerContext& context);
+
+// Leave a Gym. Assumes the player is standing directly north of the exit
+// (i.e. just inside the door, facing it).
+void leave_gym(ConsoleHandle& console, ProControllerContext& context);
+
 // Trigger encounters in grass without moving by tapping the left thumbstick back and forth
 // Can be used to alternate left/right and up/down. It is important that the player is not facing
 // the same direction as the first thumbstick press.

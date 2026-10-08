@@ -48,6 +48,7 @@ enum class CheckpointMode{
 //  more building types get their own navigation helpers.
 enum class BuildingType{
     POKECENTER,
+    GYM,
 };
 
 

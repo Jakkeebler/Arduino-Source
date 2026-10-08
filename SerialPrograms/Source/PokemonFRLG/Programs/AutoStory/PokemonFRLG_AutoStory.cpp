@@ -16,6 +16,9 @@
 #include "PokemonFRLG_AutoStory_Segment_B0_03.h"
 #include "PokemonFRLG_AutoStory_Segment_B0_04.h"
 #include "PokemonFRLG_AutoStory_Segment_B0_05.h"
+#include "PokemonFRLG_AutoStory_Segment_B3a.h"
+#include "PokemonFRLG_AutoStory_Segment_B3b.h"
+#include "PokemonFRLG_AutoStory_Segment_B3c.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -128,6 +131,80 @@ public:
     }
 };
 
+//  Real implementation of Phase::B3a: Cerulean Gym -> S.S. Anne gangplank.
+//  Entirely map-driven navigate_to() calls (see B3a's .cpp for the leg-by-leg
+//  breakdown).
+class AutoStory_Segment_B3a : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B3a);
+    }
+    virtual std::string start_text() const override{
+        return "Outside the Cerulean Gym, Cascade Badge in hand.";
+    }
+    virtual std::string end_text() const override{
+        return "Standing at the S.S. Anne gangplank in Vermilion City.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B3a_cerulean_to_ssanne(env, context, options, stats);
+    }
+};
+
+//  Real implementation of Phase::B3b: board the S.S. Anne, fight the rival,
+//  deliver the panacea, receive HM01 Cut, disembark. See B3b's header for
+//  the known gaps in this first pass (interior/unmapped, not hardware-
+//  verified).
+class AutoStory_Segment_B3b : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B3b);
+    }
+    virtual std::string start_text() const override{
+        return "At the S.S. Anne gangplank, about to board.";
+    }
+    virtual std::string end_text() const override{
+        return "Off the S.S. Anne with Cut taught, back in Vermilion City.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B3b_ssanne_traversal(env, context, options, stats);
+    }
+};
+
+//  Real implementation of Phase::B3c: Vermilion Gym -> Lt. Surge -> Thunder
+//  Badge + TM24, then a side trip to Bill's Sea Cottage for HM02 Fly before
+//  returning outside the gym. See B3c's header for the known gaps (trash-
+//  can puzzle order, Bill cutscene length -- not hardware-verified).
+class AutoStory_Segment_B3c : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B3c);
+    }
+    virtual std::string start_text() const override{
+        return "In Vermilion City with Cut, heading for the Vermilion Gym.";
+    }
+    virtual std::string end_text() const override{
+        return "Thunder Badge won. Outside the Vermilion Gym.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B3c_vermilion_gym_thunder_badge(env, context, options, stats);
+    }
+};
+
 }  //  anonymous namespace
 
 
@@ -144,9 +221,9 @@ const std::vector<std::unique_ptr<AutoStory_Segment>>& ALL_AUTO_STORY_SEGMENT_LI
         add(Phase::B2a, "Outside the Pewter Gym, Boulder Badge in hand.",                            "Standing at the entrance to Mt. Moon.");
         add(Phase::B2b, "At the entrance to Mt. Moon.",                                              "At the far (Route 4) exit of Mt. Moon.");
         add(Phase::B2c, "At the Route 4 exit of Mt. Moon, heading for Cerulean City.",                "Cascade Badge won. Outside the Cerulean Gym.");
-        add(Phase::B3a, "Outside the Cerulean Gym, Cascade Badge in hand.",                           "Standing at the S.S. Anne gangplank in Vermilion City.");
-        add(Phase::B3b, "At the S.S. Anne gangplank, about to board.",                                 "Off the S.S. Anne with Cut taught, back in Vermilion City.");
-        add(Phase::B3c, "In Vermilion City with Cut, heading for the Vermilion Gym.",                  "Thunder Badge won. Outside the Vermilion Gym.");
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B3a>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B3b>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B3c>());
         add(Phase::B4a, "Outside the Vermilion Gym, Thunder Badge in hand.",                           "In Lavender Town, having passed through Rock Tunnel.");
         add(Phase::B4b, "In Lavender Town, heading for Celadon City.",                                 "Rainbow Badge won. Outside the Celadon Gym.");
         add(Phase::B5a, "Outside the Celadon Gym, Rainbow Badge in hand.",                             "At the entrance to Pokemon Tower in Lavender Town.");

@@ -41,6 +41,9 @@ void enter_building(
     case BuildingType::POKECENTER:
         enter_pokecenter(env.console, context);
         return;
+    case BuildingType::GYM:
+        enter_gym(env.console, context);
+        return;
     }
     OperationFailedException::fire(
         ErrorReport::SEND_ERROR_REPORT,
@@ -57,6 +60,9 @@ void exit_building(
     switch (building){
     case BuildingType::POKECENTER:
         leave_pokecenter(env.console, context);
+        return;
+    case BuildingType::GYM:
+        leave_gym(env.console, context);
         return;
     }
     OperationFailedException::fire(

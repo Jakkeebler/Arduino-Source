@@ -9,7 +9,12 @@
 #ifndef PokemonAutomation_PokemonFRLG_KantoGoals_Extended_H
 #define PokemonAutomation_PokemonFRLG_KantoGoals_Extended_H
 
-#include "PokemonFRLG_KantoMapNavigator.h"
+//  NOTE: this worktree doesn't have Scripts/PokemonFRLG/generate_kanto_full_map.py
+//  (added on a sibling branch), so the include path below was hand-fixed to
+//  resolve from this file's actual directory (Inference/Map/) rather than
+//  regenerated. If the generator script lands here later, verify it emits
+//  this same relative path.
+#include "PokemonFRLG/Programs/PokemonFRLG_KantoMapNavigator.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
