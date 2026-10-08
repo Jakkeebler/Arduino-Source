@@ -21,6 +21,8 @@
 #include "PokemonFRLG_AutoStory_Segment_B5a.h"
 #include "PokemonFRLG_AutoStory_Segment_B5b.h"
 #include "PokemonFRLG_AutoStory_Segment_B5c.h"
+#include "PokemonFRLG_AutoStory_Segment_B7a.h"
+#include "PokemonFRLG_AutoStory_Segment_B7b.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -248,6 +250,53 @@ public:
     }
 };
 
+//  Real implementations of Phase::B7a/B7b (Volcano Badge). Same thin-wrapper
+//  shape as AutoStory_Segment_B5a/B5b/B5c above; see
+//  PokemonFRLG_AutoStory_Segment_B7{a,b}.h/.cpp for the actual logic and
+//  known caveats (Pokemon Mansion traversal and the gym's sliding-floor
+//  puzzle are both best-effort/not hardware-verified).
+class AutoStory_Segment_B7a : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B7a);
+    }
+    virtual std::string start_text() const override{
+        return "Outside the Cinnabar Gym, Marsh Badge in hand.";
+    }
+    virtual std::string end_text() const override{
+        return "Exited Pokemon Mansion, standing outside the Cinnabar Gym.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B7a_cinnabar_mansion(env, context, options, stats);
+    }
+};
+
+class AutoStory_Segment_B7b : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B7b);
+    }
+    virtual std::string start_text() const override{
+        return "Standing outside the Cinnabar Gym, ready to challenge it.";
+    }
+    virtual std::string end_text() const override{
+        return "Volcano Badge won. Outside the Cinnabar Gym.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B7b_blaine_volcano_badge(env, context, options, stats);
+    }
+};
+
 }  //  anonymous namespace
 
 
@@ -274,8 +323,8 @@ const std::vector<std::unique_ptr<AutoStory_Segment>>& ALL_AUTO_STORY_SEGMENT_LI
         ret.emplace_back(std::make_unique<AutoStory_Segment_B5c>());
         add(Phase::B6a, "Outside the Fuchsia Gym, Soul Badge in hand.",                                "Exited the Safari Zone with Surf and Strength obtained.");
         add(Phase::B6b, "Surf and Strength obtained, heading for Cinnabar Island.",                    "Marsh Badge won. Outside the Cinnabar Gym.");
-        add(Phase::B7a, "Outside the Cinnabar Gym, Marsh Badge in hand.",                              "Exited Pokemon Mansion, standing outside the Cinnabar Gym.");
-        add(Phase::B7b, "Standing outside the Cinnabar Gym, ready to challenge it.",                   "Volcano Badge won. Outside the Cinnabar Gym.");
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B7a>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B7b>());
         add(Phase::B8a, "Outside the Cinnabar Gym, Volcano Badge in hand.",                            "Exited Seafoam Islands onto Route 20, heading for Viridian City.");
         add(Phase::B8b, "On Route 20/Viridian City, heading for the Viridian Gym.",                    "Earth Badge won. Outside the Viridian Gym -- all 8 badges obtained.");
         add(Phase::B8c, "Outside the Viridian Gym, all 8 badges in hand.",                             "Standing at the entrance to Victory Road on Route 23.");

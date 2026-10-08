@@ -120,6 +120,20 @@ namespace KantoGoals{
     //  triggering the fade mid-navigation. Tolerance 0 for the same reason as
     //  the Pokemon Centers -- enter_gym() walks straight north into the door.
     constexpr KantoGoal PewterGymEntrance           { 63,  77, 0};
+
+    //  ---- Phase B7 (Volcano Badge) building doors ----
+    //
+    //  Derived from the generated warp_events door tiles (KantoGoals::
+    //  Extended::PokemonMansion1fDoor {68,383} and CinnabarIslandGymDoor
+    //  {80,384}) using the same "entrance = (door_x, door_y + 1)" convention
+    //  as the other building entrances above: one tile south of the door.
+    //  UNVERIFIED against KANTO_MASK walkability -- Cinnabar Island's own
+    //  sprite set hasn't been template-matched/confirmed walkable yet (see
+    //  the Phase B5 note above for what that verification step looks like).
+    //  Tolerance 0 for the same reason as the other gym/building entrances:
+    //  enter_building() walks straight north into the door.
+    constexpr KantoGoal PokemonMansionEntrance      { 68, 384, 0};
+    constexpr KantoGoal CinnabarGymEntrance         { 80, 385, 0};
 }
 
 
