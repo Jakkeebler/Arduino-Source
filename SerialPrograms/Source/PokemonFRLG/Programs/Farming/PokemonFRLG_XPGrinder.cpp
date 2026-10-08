@@ -27,6 +27,8 @@
 #include "PokemonFRLG/Programs/PokemonFRLG_KantoMapNavigator.h"
 #include "PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.h"
 #include "PokemonFRLG/PokemonFRLG_Navigation.h"
+#include "PokemonFRLG/Resources/PokemonFRLG_Evolutions.h"
+#include "PokemonFRLG_EvolutionPolicy.h"
 #include "PokemonFRLG_MoveLearnDecider.h"
 #include "PokemonFRLG_MovePlan.h"
 #include "PokemonFRLG_XPGrinder.h"
@@ -90,6 +92,11 @@ XPGrinder::XPGrinder()
         LockMode::LOCK_WHILE_RUNNING,
         false
     )
+    , IGNORE_SHINIES(
+        "<b>Ignore shinies</b><br>Do not stop the program when a wild shiny is encountered.",
+        LockMode::LOCK_WHILE_RUNNING,
+        false
+    )
     , GRIND_LOCATION(
         "<b>Grind Location:</b><br>Where to spin for wild encounters. Map-driven navigation routes the program here from the Pokémon Center after each heal trip and after whiteouts.",
         GrindLocationId_Database(),
@@ -119,11 +126,6 @@ XPGrinder::XPGrinder()
         HealLocationId_Database(),
         LockMode::LOCK_WHILE_RUNNING,
         HealLocationId::ViridianCity
-    )
-    , IGNORE_SHINIES(
-        "<b>Ignore shinies</b><br>Do not stop the program when a wild shiny is encountered.",
-        LockMode::LOCK_WHILE_RUNNING,
-        false
     )
     , ROTATION_MODE(
         "<b>Party Rotation Mode:</b><br>"
@@ -1313,6 +1315,50 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                                 ": would forfeit " + list + ".",
                             COLOR_BLUE
                         );
+                    }
+
+                    //  FRO-226: per-slot evolution policy. Block/Trade/Stone must
+                    //  never be allowed through an automatic level-up evolution
+                    //  prompt, regardless of PREVENT_EVOLUTION/HOLD_EVOLUTION_FOR_MOVES
+                    //  above (those two only ever apply to the global/move-plan
+                    //  case; a per-slot policy is a harder requirement and always
+                    //  wins).
+                    EvolutionPolicyType policy = TEAM_TABLE.evolution_policy_for(table_index);
+                    if (policy_blocks_automatic_evolution(policy)){
+                        prevent_evo = true;
+                    }
+
+                    //  Pre-level-up evolution guard (scope item 2): if this
+                    //  Pokemon is one level away from a level-up evolution that
+                    //  its policy must never let through, stop the whole run and
+                    //  surface it instead of leaning on an indefinite decline.
+                    //  Declining every single battle forever is still correct
+                    //  behavior but gives no real visibility that a policy is
+                    //  about to bind; halting here puts it in the run log and
+                    //  lets a human actually look at the Pokemon.
+                    const LevelEvolution* level_evo = level_evolution_for(TEAM_TABLE.species_for(table_index));
+                    int evo_level = level_evo == nullptr ? 0 : level_evo->level;
+                    if (should_stop_grind_before_blocked_evolution(policy, party.level[party.current_rotation], evo_level)){
+                        VideoSnapshot screen = env.console.video().snapshot();
+                        std::string message =
+                            "Rotation " + std::to_string(party.current_rotation) +
+                            " (" + TEAM_TABLE.species_for(table_index) + ", level " +
+                            std::to_string(party.level[party.current_rotation]) +
+                            ") is one level from a policy-blocked evolution at level " +
+                            std::to_string(evo_level) + ". Stopping instead of auto-confirming.";
+                        env.log(message, COLOR_RED);
+                        send_program_notification(
+                            env,
+                            NOTIFICATION_STATUS_UPDATE,
+                            COLOR_RED,
+                            message,
+                            {}, "",
+                            screen,
+                            true
+                        );
+                        stop_program = true;
+                        battle_ongoing = false;
+                        break;
                     }
 
                     WildBattleExit exit_result = exit_wild_battle(

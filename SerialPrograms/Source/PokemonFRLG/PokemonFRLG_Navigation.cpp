@@ -645,13 +645,9 @@ void flee_battle(ConsoleHandle& console, ProControllerContext& context){
 
 namespace{
 
-//  How the move-learn prompt ended.
-enum class MoveLearnResult{
-    Declined,   //  Said no to the prompt; the "give up on learning?" prompt follows.
-    Replaced,   //  A slot was forgotten; post-replace dialogs follow.
-    Cancelled,  //  Backed out of the forget screen; same follow-up prompt as Declined.
-    Stop,       //  Halt for a human. The dialog is still up.
-};
+//  MoveLearnResult now lives in PokemonFRLG_Navigation.h: run_move_learn_flow
+//  is called from outside this file (the explicit stone-evolution action),
+//  so its result type can't stay local to this anonymous namespace.
 
 //  Sleep between voting snapshots. The wait is issued as a controller command so
 //  it also lets the capture card deliver a genuinely new frame.
@@ -720,6 +716,8 @@ void cancel_forget_screen(ConsoleHandle& console, ProControllerContext& context)
     pbf_press_button(context, BUTTON_B, 200ms, 0ms);
     context.wait_for_all_requests();
 }
+
+}  //  namespace
 
 //  Drives one move-learn prompt through
 //      AwaitingPrompt -> ReadingNewMove -> ReadingMoveList
@@ -882,8 +880,6 @@ MoveLearnResult run_move_learn_flow(
     }
     return MoveLearnResult::Replaced;
 }
-
-}  //  namespace
 
 WildBattleExit exit_wild_battle(
     ConsoleHandle& console, ProControllerContext& context,
