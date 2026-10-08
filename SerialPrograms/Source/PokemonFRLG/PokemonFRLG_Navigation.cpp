@@ -6,7 +6,9 @@
  *
  */
 
+#include <array>
 #include "CommonFramework/Exceptions/OperationFailedException.h"
+#include "CommonFramework/VideoPipeline/VideoFeed.h"
 #include "CommonTools/Random.h"
 #include "CommonTools/Async/InferenceRoutines.h"
 #include "CommonTools/StartupChecks/StartProgramChecks.h"
@@ -16,25 +18,86 @@
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_Superscalar.h"
 #include "NintendoSwitch/Controllers/Procon/NintendoSwitch_ProController.h"
 #include "NintendoSwitch/NintendoSwitch_ConsoleHandle.h"
+#include "NintendoSwitch/Inference/NintendoSwitch_HomeMenuDetector.h"
 #include "Pokemon/Pokemon_Strings.h"
 #include "PokemonFRLG/PokemonFRLG_Settings.h"
 #include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_DialogDetector.h"
 #include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_BattleDialogs.h"
 #include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_PartyDialogs.h"
 #include "PokemonFRLG/Inference/Sounds/PokemonFRLG_ShinySoundDetector.h"
+#include "PokemonFRLG/Inference/Menus/PokemonFRLG_BagDetector.h"
 #include "PokemonFRLG/Inference/Menus/PokemonFRLG_StartMenuDetector.h"
 #include "PokemonFRLG/Inference/Menus/PokemonFRLG_LoadMenuDetector.h"
 #include "PokemonFRLG/Inference/Menus/PokemonFRLG_SummaryDetector.h"
+#include "PokemonFRLG/Inference/Menus/PokemonFRLG_PartyEmptySlotDetector.h"
 #include "PokemonFRLG/Inference/Menus/PokemonFRLG_PartyMenuDetector.h"
-#include "PokemonFRLG/Inference/Menus/PokemonFRLG_BagDetector.h"
 #include "PokemonFRLG/Inference/Map/PokemonFRLG_MapDetector.h"
 #include "PokemonFRLG/Inference/PokemonFRLG_BattlePokemonDetector.h"
 #include "PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_BattleMenuNavigation.h"
+#include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h"
+#include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnStateMachine.h"
+#include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_LearnMoveDialogReader.h"
+#include "PokemonFRLG/Inference/Dialogs/PokemonFRLG_ForgetMoveScreen.h"
 #include "PokemonFRLG_Navigation.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
 namespace PokemonFRLG{
+
+
+void home_black_border_check(ConsoleHandle& console, ProControllerContext& context){
+    if (GameSettings::instance().DEVICE == GameSettings::Device::switch_1_2){
+        console.log("Switch 1 or 2 selected in Settings.");
+
+        console.log("Checking for min 720p and 16:9.");
+        assert_16_9_720p_min(console, console);
+
+        console.log("Going to home to check for black border.");
+
+        //  Connect the controller.
+        require_player(console, context, BUTTON_ZL);
+
+        pbf_press_button(context, BUTTON_HOME, 120ms, 880ms);
+        try{
+            ensure_at_home(console, context, 2);
+        }catch (OperationFailedException&){
+            ControllerPlayerNumber current = context->get_player_number(context);
+            if (current == ControllerPlayerNumber::UNKNOWN){
+                throw UserSetupError(
+                    console,
+                    "Unable to find Home menu.\n\n"
+                    "Either your controller isn't connected or your screen size to not "
+                    "set to 100% in the TV Settings on your Nintendo Switch.\n\n"
+                    "If your Switch entered the Home screen and re-entered the game, then your "
+                    "controller is connected but your screen size is not set to 100%.\n\n"
+                    "If nothing happened at all, then your controller is not connected. "
+                    "Please disconnect all other controllers and try again.\n\n"
+                    "We recommend changing the controller to \"NS1: Wired Pro Controller\" "
+                    "as that will be able self-diagnose controller connection issues."
+                );
+            }else{
+                throw UserSetupError(
+                    console,
+                    "Unable to find Home menu.\n\n"
+                    "It is likely your screen size to not set to 100% in the TV Settings on your Nintendo Switch."
+                );
+            }
+        }
+
+//        context.wait_for_all_requests();
+        StartProgramChecks::check_border(console);
+        console.log("Returning to game.");
+        resume_game_from_home(console, context);
+        context.wait_for_all_requests();
+        console.log("Entered game.");
+    }else{
+        console.log("Non-Switch device selected in Settings.");
+        console.log("Skipping black border check.", COLOR_BLUE);
+    }
+}
+
+
 
 
 bool try_soft_reset(ConsoleHandle& console, ProControllerContext& context){
@@ -251,15 +314,15 @@ bool handle_encounter(ConsoleHandle& console, ProControllerContext& context, boo
         shiny_coefficient = error_coefficient;
         return true;
     });
-    AdvanceBattleDialogWatcher legendary_appeared(COLOR_YELLOW);
-
+    AdvanceBattleDialogWatcher battle_dialog(COLOR_YELLOW);
+    
     int res = run_until<ProControllerContext>(
         console, context,
         [&](ProControllerContext& context){
             int ret = wait_until(
                 console, context,
                 std::chrono::seconds(30), //More than enough time for shiny sound
-                {{legendary_appeared}}
+                {{battle_dialog}}
             );
             if (ret == 0){
                 console.log("Battle Advance arrow detected.");
@@ -311,30 +374,64 @@ bool handle_encounter(ConsoleHandle& console, ProControllerContext& context, boo
         //Send out lead, no shiny detection needed. (Or wanted.)
         BattleMenuWatcher battle_menu(COLOR_RED);
         console.log("Sending out lead Pokemon.");
-        pbf_press_button(context, BUTTON_A, 320ms, 320ms);
+        WallClock start = current_time();
+        
+        while (true){
+            if (current_time() - start > 60s){
+                OperationFailedException::fire(
+                    ErrorReport::SEND_ERROR_REPORT,
+                    "handle_encounter(): No battle menu detected after sixty seconds.",
+                    console
+                );
+            }
+            pbf_press_button(context, BUTTON_B, 320ms, 320ms);
 
-        int ret = wait_until(
-            console, context,
-            std::chrono::seconds(15),
-            { {battle_menu} }
-        );
-        if (ret == 0){
-            console.log("Battle menu detecteed!");
-        }else{
-            OperationFailedException::fire(
-                ErrorReport::SEND_ERROR_REPORT,
-                "handle_encounter(): Did not detect battle menu.",
-                console
+            int ret = wait_until(
+                console, context,
+                std::chrono::seconds(15),
+                { {battle_menu, battle_dialog} }
             );
+
+            switch (ret){
+            case 0:
+                console.log("Battle menu detecteed!");
+                break;
+            case 1:
+                console.log("Battle Advance arrow detected. This is likely due to an ability triggering at the start of battle.");
+                pbf_press_button(context, BUTTON_B, 320ms, 320ms);
+                context.wait_for_all_requests();
+                continue;
+            default:
+                console.log("Did not detect battle menu or battle dialog.");
+                continue;
+            }
+
+            pbf_wait(context, 1000ms);
+            context.wait_for_all_requests();
+            break;
         }
-        pbf_wait(context, 1000ms);
-        context.wait_for_all_requests();
     }
 
     return false;
 }
 
-BattleResult spam_first_move(ConsoleHandle& console, ProControllerContext& context){
+BattleResult spam_first_move(
+    ConsoleHandle& console, ProControllerContext& context,
+    const std::vector<size_t>& move_priority
+){
+    //  Effective priority list: drop out-of-range entries; if empty, default to slot 0.
+    std::vector<size_t> priority;
+    priority.reserve(move_priority.size());
+    for (size_t s : move_priority){
+        if (s < 4){
+            priority.push_back(s);
+        }
+    }
+    if (priority.empty()){
+        priority.push_back(0);
+    }
+    const bool single_default_slot = (priority.size() == 1 && priority[0] == 0);
+
     uint16_t errors = 0;
     uint16_t times_moved = 0;
     while (true){
@@ -343,21 +440,19 @@ BattleResult spam_first_move(ConsoleHandle& console, ProControllerContext& conte
                 ErrorReport::SEND_ERROR_REPORT,
                 "spam_first_move(): Failed to use move 5 times.",
                 console
-            );  
+            );
         } else if (times_moved > 50){
             OperationFailedException::fire(
                 ErrorReport::SEND_ERROR_REPORT,
                 "spam_first_move(): More than 50 move uses detected.",
                 console
-            );  
+            );
         }
 
         BattleMenuWatcher battle_menu(COLOR_RED);
         BattleFaintWatcher pokemon_fainted(COLOR_RED);
         BattleOpponentFaintWatcher opponent_fainted(COLOR_RED);
         BlackScreenWatcher battle_ended(COLOR_RED);
-        BattleOutOfPpWatcher out_of_pp(COLOR_RED);
-        AdvanceBattleDialogWatcher out_of_pp_dialog(COLOR_RED);
 
         int ret = run_until<ProControllerContext>(
             console, context,
@@ -368,38 +463,92 @@ BattleResult spam_first_move(ConsoleHandle& console, ProControllerContext& conte
             { battle_menu, pokemon_fainted, opponent_fainted, battle_ended }
         );
 
-        int ret2;
         switch (ret){
-        case 0:
-            console.log("Using first move.");
+        case 0: {
             context.wait_for_all_requests();
-            ret2 = run_until<ProControllerContext>(
-                console, context,
-                [](ProControllerContext& context){
-                    pbf_press_button(context, BUTTON_A, 200ms, 300ms); // leave enough time for PP color to be detected
-                    pbf_press_button(context, BUTTON_A, 200ms, 300ms);
-                    pbf_mash_button(context, BUTTON_A, 500ms);
-                    context.wait_for_all_requests();
-                },
-                { out_of_pp, out_of_pp_dialog }
-            );
-            if (ret2 < 0){
-                times_moved++;
-            } else {
-                console.log("Out of PP, fleeing battle.");
-                pbf_mash_button(context, BUTTON_B, 2000ms);
-                flee_battle(console, context);
-                context.wait_for_all_requests();
-                return BattleResult::outofpp;
+            //  Press A on FIGHT to open the move list, then probe each priority
+            //  slot in order. The BattleOutOfPpWatcher reads the currently
+            //  highlighted slot's PP region, so we re-check it after each
+            //  cursor move.
+            int initial_pp_ret;
+            {
+                BattleOutOfPpWatcher pp_watch(COLOR_RED);
+                initial_pp_ret = run_until<ProControllerContext>(
+                    console, context,
+                    [](ProControllerContext& ctx){
+                        pbf_press_button(ctx, BUTTON_A, 200ms, 400ms);
+                    },
+                    { pp_watch }
+                );
             }
-            continue;
+
+            //  Fast path: legacy default of "use slot 1 only", no cursor navigation,
+            //  no PP re-checks. Matches pre-priority-list behaviour exactly.
+            if (single_default_slot){
+                if (initial_pp_ret >= 0){
+                    console.log("Out of PP, fleeing battle.");
+                    pbf_mash_button(context, BUTTON_B, 2000ms);
+                    flee_battle(console, context);
+                    context.wait_for_all_requests();
+                    return BattleResult::outofpp;
+                }
+                console.log("Using move slot 1.");
+                pbf_press_button(context, BUTTON_A, 200ms, 300ms);
+                pbf_mash_button(context, BUTTON_A, 500ms);
+                context.wait_for_all_requests();
+                times_moved++;
+                continue;
+            }
+
+            //  Multi-slot path: walk the priority list, using arrow detection
+            //  to navigate the move list and re-checking PP per slot.
+            bool selected = false;
+            for (size_t i = 0; i < priority.size(); i++){
+                size_t slot = priority[i];
+                console.log("Trying move slot " + std::to_string(slot + 1) + ".");
+                if (!move_cursor_to_move_slot(console, context, static_cast<MoveSlot>(slot))){
+                    console.log("Failed to position cursor on move slot " + std::to_string(slot + 1) + "; trying next.", COLOR_RED);
+                    continue;
+                }
+                //  Let the PP/type info panel redraw before sampling the watcher.
+                pbf_wait(context, 300ms);
+                context.wait_for_all_requests();
+
+                BattleOutOfPpWatcher pp_watch_slot(COLOR_RED);
+                int pp_ret = wait_until(
+                    console, context,
+                    std::chrono::milliseconds(600),
+                    { pp_watch_slot }
+                );
+                if (pp_ret >= 0){
+                    console.log("Move slot " + std::to_string(slot + 1) + " is out of PP.");
+                    continue;
+                }
+
+                console.log("Using move slot " + std::to_string(slot + 1) + ".");
+                pbf_press_button(context, BUTTON_A, 200ms, 300ms);
+                pbf_mash_button(context, BUTTON_A, 500ms);
+                context.wait_for_all_requests();
+                times_moved++;
+                selected = true;
+                break;
+            }
+            if (selected){
+                continue;
+            }
+            console.log("All priority moves out of PP, fleeing battle.");
+            pbf_mash_button(context, BUTTON_B, 2000ms);
+            flee_battle(console, context);
+            context.wait_for_all_requests();
+            return BattleResult::outofpp;
+        }
         case 1:
             console.log("Player Pokemon fainted.");
             return BattleResult::playerfainted;
         case 2:
             console.log("Opponent fainted.");
             return BattleResult::opponentfainted;
-        case 3: 
+        case 3:
             console.log("Battle ended"); // the opponent probably fled
             pbf_wait(context, 2000ms);
             context.wait_for_all_requests();
@@ -494,20 +643,286 @@ void flee_battle(ConsoleHandle& console, ProControllerContext& context){
     }
 }
 
-bool exit_wild_battle(ConsoleHandle& console, ProControllerContext& context, bool stop_on_move_learn, bool prevent_evolution){
-    // For move learning, there are two dialog selection boxes in a row
-    // we need to decline the first one and accept the second one, so mashing B won't work
-    // The first one will occur after an Advance Battle Dialog
+namespace{
+
+//  How the move-learn prompt ended.
+enum class MoveLearnResult{
+    Declined,   //  Said no to the prompt; the "give up on learning?" prompt follows.
+    Replaced,   //  A slot was forgotten; post-replace dialogs follow.
+    Cancelled,  //  Backed out of the forget screen; same follow-up prompt as Declined.
+    Stop,       //  Halt for a human. The dialog is still up.
+};
+
+//  Sleep between voting snapshots. The wait is issued as a controller command so
+//  it also lets the capture card deliver a genuinely new frame.
+void vote_pause(ProControllerContext& context, const MoveLearnConfig& config){
+    pbf_wait(context, config.vote_interval);
+    context.wait_for_all_requests();
+}
+
+//  One voting round on the offered move: `vote_samples` independent snapshots.
+//  "" if no value reached a majority.
+std::string read_new_move_round(
+    ConsoleHandle& console, ProControllerContext& context,
+    Language language, const MoveLearnConfig& config
+){
+    LearnMoveDialogReader reader(COLOR_RED);
+    std::vector<std::string> samples;
+    for (size_t i = 0; i < std::max<size_t>(1, config.vote_samples); i++){
+        if (i != 0){
+            vote_pause(context, config);
+        }
+        VideoSnapshot snap = console.video().snapshot();
+        samples.push_back(reader.read_new_move(console.logger(), language, snap));
+    }
+    std::string voted = vote_string(samples);
+    if (voted.empty()){
+        std::string all;
+        for (const std::string& s : samples){
+            all += (all.empty() ? "'" : ", '") + s + "'";
+        }
+        console.log("Move learn: new-move reads did not agree [" + all + "].", COLOR_RED);
+    }
+    return voted;
+}
+
+//  One voting round on the forget screen's four moves.
+bool read_move_list_round(
+    ConsoleHandle& console, ProControllerContext& context,
+    Language language, const MoveLearnConfig& config,
+    std::array<std::string, 4>& out
+){
+    ForgetMoveScreenReader reader(COLOR_RED);
+    std::vector<std::array<std::string, 4>> samples;
+    for (size_t i = 0; i < std::max<size_t>(1, config.vote_samples); i++){
+        if (i != 0){
+            vote_pause(context, config);
+        }
+        VideoSnapshot snap = console.video().snapshot();
+        samples.push_back(reader.read_moves(console.logger(), language, snap));
+    }
+    if (vote_move_list(samples, out)){
+        return true;
+    }
+    std::string all;
+    for (const auto& s : samples){
+        all += std::string(all.empty() ? "[" : " vs [") +
+            s[0] + "|" + s[1] + "|" + s[2] + "|" + s[3] + "]";
+    }
+    console.log("Move learn: forget-screen reads did not agree " + all + ".", COLOR_RED);
+    return false;
+}
+
+//  Backs out of the forget screen. The game answers with the same "Give up on
+//  learning <Move>?" prompt a declined offer produces.
+void cancel_forget_screen(ConsoleHandle& console, ProControllerContext& context){
+    console.log("Move learn: cancelling out of the forget screen.", COLOR_RED);
+    pbf_press_button(context, BUTTON_B, 200ms, 0ms);
+    context.wait_for_all_requests();
+}
+
+//  Drives one move-learn prompt through
+//      AwaitingPrompt -> ReadingNewMove -> ReadingMoveList
+//                     -> AwaitingForgetChoice -> Confirmed
+//  Every edge is bounded: a state that disagrees with itself or times out
+//  config.max_consecutive_failures times in a row takes its recovery path
+//  instead of retrying forever --
+//      ReadingNewMove       -> treat the move as unknown (decider's on_unknown policy)
+//      ReadingMoveList      -> on_unknown policy: Stop halts, Decline cancels
+//      AwaitingForgetChoice -> carry on; the caller's own watchers are the backstop
+MoveLearnResult run_move_learn_flow(
+    ConsoleHandle& console, ProControllerContext& context,
+    const MoveLearnDecider* decider, Language language,
+    const MoveLearnConfig& config
+){
+    using Outcome = MoveLearnStateMachine::Outcome;
+    using Step = MoveLearnStateMachine::Step;
+    MoveLearnStateMachine flow(config.max_consecutive_failures);
+
+    //  AwaitingPrompt. The caller's BattleLearnDialogWatcher is what got us
+    //  here, so this edge is already satisfied; its own timeout/retry is the
+    //  caller's 30 s watch window and error budget.
+    flow.report(Outcome::Success);
+
+    //  Without a decider every offer is declined unread.
+    if (decider == nullptr){
+        pbf_press_button(context, BUTTON_B, 200ms, 0ms);
+        flow.finish();
+        return MoveLearnResult::Declined;
+    }
+
+    //  ReadingNewMove.
+    std::string new_move;
+    while (true){
+        new_move = read_new_move_round(console, context, language, config);
+        if (!new_move.empty()){
+            flow.report(Outcome::Success);
+            break;
+        }
+        Step step = flow.report(Outcome::Disagreement);
+        if (step == Step::Recover){
+            console.log(
+                "Move learn: new move unreadable after " +
+                std::to_string(config.max_consecutive_failures) +
+                " rounds; applying the on-unknown policy.",
+                COLOR_RED
+            );
+            break;
+        }
+        console.log("Move learn: re-reading the new move.", COLOR_ORANGE);
+        vote_pause(context, config);
+    }
+
+    MoveLearnDecider::FirstAction action = decider->decide_accept_or_decline(new_move);
+    const std::string deferral = decider->evolution_deferral_reason(new_move);
+    console.log(
+        "Move learn dialog: new move OCR='" + new_move +
+        "', decision=" + (
+            action == MoveLearnDecider::FirstAction::Stop ? "Stop" :
+            action == MoveLearnDecider::FirstAction::Replace ? "Replace" : "Decline"
+        ) + (deferral.empty() ? "" : " (evolution protection: " + deferral + ")")
+    );
+    if (action == MoveLearnDecider::FirstAction::Stop){
+        console.log("Decider returned Stop (battle dialog still active).");
+        return MoveLearnResult::Stop;
+    }
+    if (action == MoveLearnDecider::FirstAction::Decline){
+        //  Do NOT report a learn. Declining changes nothing about the moveset,
+        //  and reporting LearnHandled made the caller run a full party-menu
+        //  rescan after every declined level-up move -- slow, and pointless.
+        pbf_press_button(context, BUTTON_B, 200ms, 0ms);
+        flow.finish();
+        return MoveLearnResult::Declined;
+    }
+
+    //  Accept the prompt and walk the forget-move screen.
+    pbf_press_button(context, BUTTON_A, 200ms, 0ms);
+    context.wait_for_all_requests();
+
+    //  ReadingMoveList, first the screen itself. The retry budget below covers
+    //  both waiting for the screen and reading it.
+    while (true){
+        ForgetMoveScreenWatcher forget_screen(COLOR_RED);
+        int waited = wait_until(console, context, config.screen_timeout, { forget_screen });
+        if (waited >= 0){
+            break;
+        }
+        Step step = flow.report(Outcome::Timeout);
+        if (step == Step::Recover){
+            //  The detector's thresholds are uncalibrated, so a miss here is not
+            //  proof the screen is absent. Read anyway; the vote rejects garbage.
+            console.log("Forget-move screen not detected; reading it anyway.", COLOR_RED);
+            break;
+        }
+        console.log("Move learn: forget-move screen not detected, waiting again.", COLOR_ORANGE);
+    }
+
+    std::array<std::string, 4> current_moves;
+    while (true){
+        if (read_move_list_round(console, context, language, config, current_moves)){
+            flow.report(Outcome::Success);
+            break;
+        }
+        Step step = flow.report(Outcome::Disagreement);
+        if (step == Step::Recover){
+            //  Forgetting a slot we could not read could destroy a pinned move.
+            if (decider->on_unknown() == OnUnknownOffered::Stop){
+                console.log("Move list unreadable; on-unknown policy is Stop.", COLOR_RED);
+                return MoveLearnResult::Stop;
+            }
+            console.log("Move list unreadable; declining the new move instead.", COLOR_RED);
+            cancel_forget_screen(console, context);
+            flow.finish();
+            return MoveLearnResult::Cancelled;
+        }
+        console.log("Move learn: re-reading the move list.", COLOR_ORANGE);
+        vote_pause(context, config);
+    }
+    console.log(
+        std::string("Forget-screen current moves: [") +
+        current_moves[0] + "|" + current_moves[1] + "|" +
+        current_moves[2] + "|" + current_moves[3] + "]"
+    );
+
+    //  AwaitingForgetChoice.
+    int forget_slot = decider->pick_forget_slot(new_move, current_moves);
+    if (forget_slot < 0){
+        console.log("Move learn: every current move is pinned; nothing may be forgotten.", COLOR_RED);
+        cancel_forget_screen(console, context);
+        flow.finish();
+        return MoveLearnResult::Cancelled;
+    }
+    console.log("Forgetting slot " + std::to_string(forget_slot + 1) + ".");
+
+    //  Cursor starts on the top move (slot 0). Step down to target.
+    for (int i = 0; i < forget_slot; i++){
+        pbf_press_dpad(context, DPAD_DOWN, 160ms, 320ms);
+    }
+    pbf_press_button(context, BUTTON_A, 200ms, 0ms);
+    context.wait_for_all_requests();
+
+    //  Confirm the game acted on it: the "1, 2, and... poof!" dialog starts.
+    //  Only waits, never re-presses -- a second A could answer a later prompt.
+    while (true){
+        AdvanceBattleDialogWatcher advance_dialog(COLOR_RED);
+        int waited = wait_until(console, context, config.confirm_timeout, { advance_dialog });
+        if (waited >= 0){
+            flow.report(Outcome::Success);
+            break;
+        }
+        Step step = flow.report(Outcome::Timeout);
+        if (step == Step::Recover){
+            console.log(
+                "Move learn: post-forget dialog not seen; carrying on (replace was already committed).",
+                COLOR_RED
+            );
+            flow.finish();
+            break;
+        }
+    }
+    return MoveLearnResult::Replaced;
+}
+
+}  //  namespace
+
+WildBattleExit exit_wild_battle(
+    ConsoleHandle& console, ProControllerContext& context,
+    bool stop_on_move_learn, bool prevent_evolution,
+    const MoveLearnDecider* decider,
+    Language language,
+    bool* evolved_out,
+    const MoveLearnConfig* learn_config
+){
+    // For move learning, there are two dialog selection boxes in a row.
+    // Decline path: press B on the first, then A on the second (don't learn).
+    // Replace path: press A on the first, wait for the "Forget which move?"
+    //   screen, OCR the 4 current moves, ask the decider which slot to forget,
+    //   navigate (DPAD_DOWN x N), press A to confirm.
+    // Stop: return StopBattleStuck immediately — caller must halt and not
+    //   navigate, since the dialog is still on screen.
+
+    auto exit_normally = [&](bool move_learned){
+        return move_learned ? WildBattleExit::LearnHandled : WildBattleExit::NoLearn;
+    };
+
     uint16_t errors = 0;
     uint16_t loops = 0;
+    //  Dialog advances (case 1). Bounded separately from `loops`, which counts
+    //  move-learn prompt bounces: the post-battle EXP / level-up / "poof!" /
+    //  "learned Y!" chain legitimately walks case 1 many times per battle, so the
+    //  cap is generous -- it exists only so a dialog that keeps an advance arrow up
+    //  while B fails to clear it reports an error instead of spinning forever.
+    uint16_t advances = 0;
     bool first_attempt = true;
     bool rejected_first_box = false;
     bool move_learned = false;
     while (true){
-        if (errors > 5 || loops > 5){
+        if (errors > 5 || loops > 5 || advances > 40){
             OperationFailedException::fire(
                 ErrorReport::SEND_ERROR_REPORT,
-                "exit_wild_battle(): Failed to exit battle.",
+                "exit_wild_battle(): Failed to exit battle. (errors=" +
+                    std::to_string(errors) + ", loops=" + std::to_string(loops) +
+                    ", advances=" + std::to_string(advances) + ")",
                 console
             );
         }
@@ -520,13 +935,28 @@ bool exit_wild_battle(ConsoleHandle& console, ProControllerContext& context, boo
         WallClock deadline = current_time() + 30s;
         int ret;
         if (first_attempt){
-            ret = run_until<ProControllerContext>(
+            //  The long B-mash is how we blow through the post-battle EXP /
+            //  level-up dialog chain in ~2 s, so keep it -- and deliberately do
+            //  NOT watch advance_dialog here. That watcher fires on the "wild X
+            //  fainted!" arrow which is already on screen when we arrive, so
+            //  watching it would abandon the mash immediately and walk the whole
+            //  chain one ~3 s press at a time.
+            //
+            //  DO watch move_learn_select. Previously this branch watched only
+            //  battle_exited, so a move-learn prompt got answered "No" by the mash
+            //  and then "No" again to "Give up on learning X?", which bounces back
+            //  to the first prompt -- burning the full 20 s before the decider ever
+            //  got a look at the move.
+            int raw = run_until<ProControllerContext>(
                 console, context,
                 [](ProControllerContext& context) {
                     pbf_mash_button(context, BUTTON_B, 20000ms);
                 },
-                { battle_exited }
+                { battle_exited, move_learn_select }
             );
+            //  Remap onto the shared switch's indices below, which are ordered
+            //  { battle_exited, advance_dialog, move_learn_select }.
+            ret = (raw == 1) ? 2 : raw;
         }else{
             ret = run_until<ProControllerContext>(
                 console, context,
@@ -561,29 +991,61 @@ bool exit_wild_battle(ConsoleHandle& console, ProControllerContext& context, boo
                 if (!prevent_evolution){
                     // make sure B isn't pressed too soon, which would cancel the evolution
                     pbf_wait(context, 20000ms);
+                    //  Only report an evolution that we actually allowed to
+                    //  complete. When prevent_evolution is set we cancel it,
+                    //  so the species is unchanged and no rescan is needed.
+                    if (evolved_out != nullptr){
+                        *evolved_out = true;
+                    }
                 }
                 rejected_first_box = false;
                 continue; // press B as in other cases, and handle any move learning loops that might come up
             }
             console.log("Battle exited.");
-            return move_learned;
+            return exit_normally(move_learned);
         case 1:
+            //  Only reachable from the !first_attempt branch, which is the only one
+            //  that watches advance_dialog.
             console.log("Battle Advance arrow detected.");
+            advances++;
             pbf_press_button(context, BUTTON_B, 200ms, 800ms);
             rejected_first_box = false;
             continue;
         case 2:
+            first_attempt = false;
             if (stop_on_move_learn){
-                console.log("Move learn detected.");
-                return true;
-            }else if (rejected_first_box){
+                console.log("Move learn detected. Stopping per stop_on_move_learn (battle dialog still active).");
+                return WildBattleExit::StopBattleStuck;
+            }
+            //  Second iteration of the learn dialog (after a previous Decline):
+            //  this is the "Give up on learning Y?" prompt — press A to confirm.
+            if (rejected_first_box){
                 loops++;
-                console.log("Declined to learn new move.");
+                console.log("Declined to learn new move (second prompt).");
                 pbf_press_button(context, BUTTON_A, 200ms, 0ms);
-            }else{
-                pbf_press_button(context, BUTTON_B, 200ms, 0ms);
-                rejected_first_box = true;
-                move_learned = true;
+                continue;
+            }
+            //  First iteration of the learn dialog. Hand it to the move-learn
+            //  state machine (voted reads, bounded retries, explicit recovery).
+            {
+                const MoveLearnConfig default_config;
+                MoveLearnResult result = run_move_learn_flow(
+                    console, context, decider, language,
+                    learn_config != nullptr ? *learn_config : default_config
+                );
+                switch (result){
+                case MoveLearnResult::Stop:
+                    return WildBattleExit::StopBattleStuck;
+                case MoveLearnResult::Replaced:
+                    move_learned = true;
+                    //  Post-replace dialogs ("1, 2, and... poof!", "X learned Y!")
+                    //  advance with B in subsequent iterations.
+                    break;
+                case MoveLearnResult::Declined:
+                case MoveLearnResult::Cancelled:
+                    rejected_first_box = true;
+                    break;
+                }
             }
             continue;
         default:
@@ -611,7 +1073,7 @@ bool exit_wild_battle(ConsoleHandle& console, ProControllerContext& context, boo
                 pbf_mash_button(context, BUTTON_B, 500ms);
                 context.wait_for_all_requests();
                 console.log("Battle exited.");
-                return move_learned;
+                return exit_normally(move_learned);
             }
             context.wait_for_all_requests();
             rejected_first_box = false;
@@ -650,6 +1112,8 @@ void open_party_menu_from_overworld(ConsoleHandle& console, ProControllerContext
         case 0:
             if (menu_context == StartMenuContext::SAFARI_ZONE){
                 ret = move_cursor_to_position(console, context, SelectionArrowPositionSafariMenu::POKEMON);
+            } else if (menu_context == StartMenuContext::NO_DEX){
+                ret = move_cursor_to_position(console, context, SelectionArrowPositionNoDexMenu::POKEMON);
             } else {
                 ret = move_cursor_to_position(console, context, SelectionArrowPositionStartMenu::POKEMON);
             }
@@ -677,6 +1141,26 @@ void open_party_menu_from_overworld(ConsoleHandle& console, ProControllerContext
             continue;
         }
     }
+}
+
+PartySlot detect_last_occupied_party_slot(ConsoleHandle& console){
+    const auto snapshot = console.video().snapshot();
+    constexpr std::array slots{
+        PartySlot::SIX,
+        PartySlot::FIVE,
+        PartySlot::FOUR,
+        PartySlot::THREE,
+        PartySlot::TWO,
+    };
+
+    for (PartySlot slot : slots){
+        PartyEmptySlotDetector empty_slot_detector(COLOR_RED, slot);
+        if (!empty_slot_detector.detect(snapshot)){
+            return slot;
+        }
+    }
+
+    return PartySlot::ONE;
 }
 
 void open_bag_from_overworld(ConsoleHandle& console, ProControllerContext& context, StartMenuContext menu_context){
@@ -709,6 +1193,8 @@ void open_bag_from_overworld(ConsoleHandle& console, ProControllerContext& conte
         case 0:
             if (menu_context == StartMenuContext::SAFARI_ZONE){
                 ret = move_cursor_to_position(console, context, SelectionArrowPositionSafariMenu::BAG);
+            } else if (menu_context == StartMenuContext::NO_DEX){
+                ret = move_cursor_to_position(console, context, SelectionArrowPositionNoDexMenu::BAG);
             } else {
                 ret = move_cursor_to_position(console, context, SelectionArrowPositionStartMenu::BAG);
             }
@@ -735,6 +1221,53 @@ void open_bag_from_overworld(ConsoleHandle& console, ProControllerContext& conte
             start_menu_is_open = false;
             continue;
         }
+    }
+}
+
+void use_sweet_scent_from_overworld(ConsoleHandle& console, ProControllerContext& context, int from_last){
+    uint16_t errors = 0;
+    
+    while (true){
+        if (errors > 5){
+            OperationFailedException::fire(
+                ErrorReport::SEND_ERROR_REPORT,
+                "use_teleport_from_overworld(): Failed to use Teleport 5 times in a row.",
+                console
+            );
+        }
+
+        open_party_menu_from_overworld(console, context);
+        // navigate to last party slot
+        for (int i=0; i<(2+from_last); i++){
+            pbf_move_left_joystick(context, {0, +1}, 200ms, 300ms);
+        }
+
+        PartySelectionWatcher sweetscent_selected(COLOR_RED);
+
+        context.wait_for_all_requests();
+        int ret = run_until<ProControllerContext>(
+            console, context,
+            [](ProControllerContext& context){
+                pbf_press_button(context, BUTTON_A, 200ms, 1800ms);
+            },
+            { sweetscent_selected }
+        );
+
+        if (ret < 0){
+            console.log("Failed to select Sweet Scent user.");
+            errors++;
+            pbf_mash_button(context, BUTTON_B, 3000ms);
+            continue;
+        }
+        
+        // select Sweet Scent (2nd option, but maybe HMs could change this)
+        pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+        pbf_press_button(context, BUTTON_A, 200ms, 1800ms);
+        pbf_press_button(context, BUTTON_A, 200ms, 800ms);
+
+        context.wait_for_all_requests();
+        console.log("Used Sweet Scent.");
+        return;
     }
 }
 
@@ -876,7 +1409,7 @@ void fly_from_kanto_map(ConsoleHandle& console, ProControllerContext& context, K
         // blindly move the cursor to the specified fly spot
         switch (destination){
         case KantoFlyLocation::pallettown:
-            pbf_move_left_joystick(context, {0, -1}, 850ms, 100ms);
+            pbf_move_left_joystick(context, {0, -1}, 900ms, 100ms);
             pbf_move_left_joystick(context, {+1, 0}, 317ms, 100ms);
             break;
         case KantoFlyLocation::viridiancity:
@@ -1006,6 +1539,18 @@ void leave_pokecenter(ConsoleHandle& console, ProControllerContext& context){
     enter_leave_pokecenter(console, context, true);
 }
 
+//  enter_leave_pokecenter() has no Pokemon-Center-specific logic -- it is
+//  just "walk onto the door tile and wait for the black-screen fade", which
+//  is the same for every building sprite in the game (Gyms included). Reuse
+//  it directly rather than duplicating the loop.
+void enter_gym(ConsoleHandle& console, ProControllerContext& context){
+    enter_leave_pokecenter(console, context, false);
+}
+
+void leave_gym(ConsoleHandle& console, ProControllerContext& context){
+    enter_leave_pokecenter(console, context, true);
+}
+
 void heal_at_pokecenter(ConsoleHandle& console, ProControllerContext& context){
     uint16_t errors = 0;
 
@@ -1048,7 +1593,7 @@ void heal_at_pokecenter(ConsoleHandle& console, ProControllerContext& context){
 
 int grass_spin(ConsoleHandle& console, ProControllerContext& context, bool leftright, Seconds timeout){
     BlackScreenWatcher battle_triggered(COLOR_RED);
-    BattleDialogWatcher battle_entered(COLOR_RED);
+    AdvanceBattleDialogWatcher battle_entered(COLOR_RED);
 
     context.wait_for_all_requests();
     console.log("Starting grass spin.");
@@ -1078,26 +1623,366 @@ int grass_spin(ConsoleHandle& console, ProControllerContext& context, bool leftr
     return encounter_shiny ? 1 : 0;
 }
 
-void home_black_border_check(ConsoleHandle& console, ProControllerContext& context){
-    if (GameSettings::instance().DEVICE == GameSettings::Device::switch_1_2){
-        console.log("Switch 1 or 2 selected in Settings.");
+int fish_encounter(ConsoleHandle& console, ProControllerContext& context, Seconds timeout){
+    WhiteDialogWatcher fishing_dialog(COLOR_RED);
+    BlackScreenWatcher battle_entered(COLOR_RED);
+    AdvanceBattleDialogWatcher battle_dialog(COLOR_RED);
+    BattleMenuWatcher battle_menu(COLOR_RED);
 
-        console.log("Checking for min 720p and 16:9.");
-        assert_16_9_720p_min(console, console);
+    context.wait_for_all_requests();
+    console.log("Starting fish encounter.");
+    WallClock start = current_time();
 
-        console.log("Going to home to check for black border.");
-        pbf_press_button(context, BUTTON_ZL, 120ms, 880ms); //  Connect the controller.
-        pbf_press_button(context, BUTTON_HOME, 120ms, 880ms);
+    while (true){
+        if (current_time() - start > timeout){
+            console.log("No pokemon hooked after timeout.");
+            return -1;
+        }
+
+        pbf_press_button(context, BUTTON_MINUS, 200ms, 200ms);
         context.wait_for_all_requests();
-        StartProgramChecks::check_border(console);
-        console.log("Returning to game.");
-        resume_game_from_home(console, context);
-        context.wait_for_all_requests();
-        console.log("Entered game.");
-    }else{
-        console.log("Non-Switch device selected in Settings.");
-        console.log("Skipping black border check.", COLOR_BLUE);
+
+        int ret = wait_until(
+            console, context,
+            std::chrono::milliseconds(2000),
+            { fishing_dialog, battle_entered, battle_dialog, battle_menu }
+        );
+
+        if (ret == 0){
+            console.log("Fishing dialog detected.");
+            pbf_press_button(context, BUTTON_B, 200ms, 200ms);
+            context.wait_for_all_requests();
+        } else if (ret == 1 || ret == 2 || ret == 3){
+            console.log("Battle entered.");
+            break;
+        }
     }
+
+    bool encounter_shiny = handle_encounter(console, context, true);
+    return encounter_shiny ? 1 : 0;
+}
+
+void switch_party_lead_overworld(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed){
+    //  game_slot_1indexed is the 1-based party slot to promote to lead (must be 2–6).
+    //  Navigation convention used throughout this file:
+    //    {+1, 0} = right,  {-1, 0} = left
+    //    {0, -1} = down (south),  {0, +1} = up (north)
+    //  Party list: right from slot 1 enters the right column (slot 2).
+    //              down {0,-1} advances within the right column.
+    //  Sub-menu:   one {0,-1} down from option 1 (STATS) reaches option 2 (SWITCH).
+
+    if (game_slot_1indexed < 2){
+        return;
+    }
+
+    open_party_menu_from_overworld(console, context);
+
+    //  Navigate to target slot: right into the right column, then down (N-2) more times.
+    pbf_move_left_joystick(context, {+1, 0}, 200ms, 300ms);
+    for (int i = 2; i < game_slot_1indexed; i++){
+        pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+    }
+
+    //  Open the Pokémon's context sub-menu.
+    PartySelectionWatcher selection_open(COLOR_RED);
+    context.wait_for_all_requests();
+    int ret = run_until<ProControllerContext>(
+        console, context,
+        [](ProControllerContext& ctx){
+            pbf_press_button(ctx, BUTTON_A, 200ms, 1800ms);
+        },
+        { selection_open }
+    );
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "switch_party_lead_overworld(): Failed to open party selection sub-menu.",
+            console
+        );
+    }
+
+    //  One down moves to SWITCH (option 2 under STATS).
+    pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+    pbf_press_button(context, BUTTON_A, 200ms, 500ms);
+
+    //  Navigate back to slot 1: up to slot 2, then left.
+    for (int i = 2; i < game_slot_1indexed; i++){
+        pbf_move_left_joystick(context, {0, +1}, 200ms, 300ms);
+    }
+    pbf_move_left_joystick(context, {-1, 0}, 200ms, 300ms);
+
+    //  Confirm the swap.
+    pbf_press_button(context, BUTTON_A, 200ms, 800ms);
+
+    //  Close the party menu.
+    pbf_press_button(context, BUTTON_B, 200ms, 300ms);
+    pbf_press_button(context, BUTTON_B, 200ms, 800ms);
+    close_start_menu(console, context);
+    context.wait_for_all_requests();
+    console.log("Party lead swapped with slot " + std::to_string(game_slot_1indexed) + ".");
+}
+
+void switch_pokemon_in_battle(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed){
+    if (game_slot_1indexed < 2){
+        return;   //  Slot 1 is already out; nothing to do.
+    }
+
+    BattleMenuWatcher battle_menu(COLOR_RED);
+    PartyMenuWatcher party_screen(COLOR_RED);
+
+    //  Make sure we are actually on the battle menu before pressing directions.
+    //  The caller may arrive here straight off the send-out animation.
+    context.wait_for_all_requests();
+    int ret = wait_until(console, context, std::chrono::seconds(15), { battle_menu });
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "switch_pokemon_in_battle(): Battle menu did not appear.",
+            console
+        );
+    }
+
+    //  Battle menu is a 2x2 grid with the cursor defaulting to FIGHT:
+    //      FIGHT    BAG
+    //      POKEMON  RUN
+    //  so POKEMON is exactly one press DOWN. (flee_battle() reaches RUN with
+    //  RIGHT + DOWN, which is what pins the layout.)
+    console.log("Switch training: opening POKEMON from the battle menu.");
+    pbf_press_dpad(context, DPAD_DOWN, 160ms, 160ms);
+    context.wait_for_all_requests();
+
+    ret = run_until<ProControllerContext>(
+        console, context,
+        [](ProControllerContext& ctx){
+            pbf_press_button(ctx, BUTTON_A, 200ms, 1800ms);
+        },
+        { party_screen }
+    );
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "switch_pokemon_in_battle(): Party screen did not appear after choosing POKEMON.",
+            console
+        );
+    }
+
+    //  Same slot arithmetic as the forced-switch screen: reset to slot 1 (the
+    //  large left panel), then right into the right column and down.
+    context.wait_for_all_requests();
+    pbf_wait(context, 500ms);
+    context.wait_for_all_requests();
+    pbf_move_left_joystick(context, {-1, 0}, 200ms, 300ms);
+    pbf_move_left_joystick(context, {+1, 0}, 200ms, 300ms);
+    for (int i = 2; i < game_slot_1indexed; i++){
+        pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+    }
+
+    //  A opens the context sub-menu. For a voluntary switch the first entry is
+    //  SHIFT (the forced-switch screen shows SEND OUT in the same position), so
+    //  a second A confirms in both cases.
+    PartySelectionWatcher selection_open(COLOR_RED);
+    context.wait_for_all_requests();
+    ret = run_until<ProControllerContext>(
+        console, context,
+        [](ProControllerContext& ctx){
+            pbf_press_button(ctx, BUTTON_A, 200ms, 1800ms);
+        },
+        { selection_open }
+    );
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "switch_pokemon_in_battle(): Context sub-menu did not appear after selecting the slot.",
+            console
+        );
+    }
+    pbf_press_button(context, BUTTON_A, 200ms, 500ms);
+
+    //  The switch resolves, then the opponent takes its turn, then the battle
+    //  menu returns. Allow for the withdraw + send-out + one opposing move.
+    context.wait_for_all_requests();
+    ret = wait_until(console, context, std::chrono::seconds(20), { battle_menu });
+    if (ret < 0){
+        //  The switch did not take. The dominant cause is a target that cannot
+        //  be sent out: a fainted Pokemon answers "There's no will to fight!"
+        //  and drops straight back to the party screen, so nothing advances and
+        //  we sit in a menu until the caller gives up. Observed 8/19 13:07, once
+        //  the party had been reordered underneath us and slot 2 held a KO'd
+        //  Pokemon.
+        //
+        //  Back out to the battle menu before reporting. A recovered failure
+        //  costs one battle's worth of shared EXP; an unrecovered one leaves the
+        //  program pressing buttons at a party screen it does not know it is on.
+        console.log(
+            "switch_pokemon_in_battle(): switch did not take. Backing out to the battle menu.",
+            COLOR_RED
+        );
+
+        //  Save the frame we are actually looking at. Every diagnosis of this
+        //  failure so far has been inference from watcher timings, which is how
+        //  the first fix aimed at the wrong step. The screen itself settles it.
+        {
+            VideoSnapshot stuck = console.video().snapshot();
+            if (stuck){
+                const std::string path = "./DebugDumps/switch_stuck_slot" +
+                    std::to_string(game_slot_1indexed) + ".png";
+                if (stuck.frame->save(path)){
+                    console.log("switch_pokemon_in_battle(): saved the stuck frame to " + path, COLOR_BLUE);
+                }
+            }
+        }
+
+        //  One B-mash is not enough to unwind every screen this can land on.
+        //  If the confirm opened SUMMARY rather than performing the switch, we
+        //  are two screens deep (summary -> party -> battle menu), and the
+        //  single 2 s mash + 10 s wait observed on 8/19 left us stranded on the
+        //  party screen with the caller believing the battle was still live.
+        int recovered = -1;
+        for (int attempt = 0; attempt < 3 && recovered < 0; attempt++){
+            pbf_mash_button(context, BUTTON_B, 2000ms);
+            context.wait_for_all_requests();
+            recovered = wait_until(console, context, std::chrono::seconds(5), { battle_menu });
+        }
+        if (recovered < 0){
+            OperationFailedException::fire(
+                ErrorReport::SEND_ERROR_REPORT,
+                "switch_pokemon_in_battle(): Battle menu did not return after the switch, "
+                "and backing out did not recover it either.",
+                console
+            );
+        }
+        //  NO_ERROR_REPORT: recovered cleanly and the caller handles this by
+        //  fighting with whoever is already out, so it is not worth a report.
+        OperationFailedException::fire(
+            ErrorReport::NO_ERROR_REPORT,
+            "switch_pokemon_in_battle(): Slot " + std::to_string(game_slot_1indexed) +
+                " could not be sent out (most likely fainted). Recovered to the battle menu.",
+            console
+        );
+    }
+    console.log("Switch training: slot " + std::to_string(game_slot_1indexed) + " is now active.");
+}
+
+void select_forced_switch_slot(ConsoleHandle& console, ProControllerContext& context, int game_slot_1indexed){
+    //  Called after spam_first_move() returns BattleResult::playerfainted when alive allies remain.
+    //  The game shows the forced-switch party screen after advancing the faint dialog.
+    //  Navigate to game_slot_1indexed and send that Pokémon into battle.
+
+    PartyMenuWatcher party_screen(COLOR_RED);
+    BattleMenuWatcher battle_menu(COLOR_RED);
+
+    //  After the active Pokémon faints, the game shows a sequence:
+    //    1. "<NAME> fainted!" advance dialog (red triangle on teal background)
+    //    2. "Use next POKéMON?" Yes/No prompt (default cursor on Yes)
+    //    3. Forced-switch party screen
+    //
+    //  Critical: we must NOT press B at step 2 — B selects "No" and forfeits
+    //  the battle (causes a whiteout). To avoid blowing past the prompt, we
+    //  identify the current screen on every iteration before pressing anything,
+    //  and we use A (not B) so that even if the Yes/No detector misses a frame,
+    //  pressing A on the prompt still selects Yes.
+    //
+    //  A is safe on every screen we may encounter here:
+    //    - A on the faint dialog → advances
+    //    - A on the Yes/No prompt (cursor defaults to Yes) → selects Yes
+    //    - A on the party screen → would open the slot sub-menu (bad), so we
+    //      detect the party screen first and break out before pressing A.
+    console.log("Forced switch: state-machine loop until party screen appears.");
+    context.wait_for_all_requests();
+
+    AdvanceBattleDialogWatcher faint_dialog(COLOR_RED);
+    BattleLearnDialogWatcher use_next_prompt(COLOR_RED);
+
+    bool reached_party = false;
+    for (int iteration = 0; iteration < 20; iteration++){
+        int state = wait_until(
+            console, context,
+            std::chrono::seconds(5),
+            { faint_dialog, use_next_prompt, party_screen }
+        );
+
+        if (state == 2){
+            console.log("State: party screen detected. Proceeding to slot navigation.");
+            reached_party = true;
+            break;
+        }
+
+        //  state 0 = faint dialog, state 1 = Yes/No prompt, -1 = unrecognized.
+        //  In every case A is the correct/safe button to press: it advances the
+        //  faint dialog, confirms Yes on the prompt, and at worst on an
+        //  unrecognized in-battle dialog it advances or repeats safely.
+        const char* state_name =
+            state == 0 ? "faint advance dialog" :
+            state == 1 ? "\"Use next POKéMON?\" Yes/No prompt" :
+            "unrecognized (5s timeout)";
+        console.log(std::string("State: ") + state_name + ". Pressing A.");
+        pbf_press_button(context, BUTTON_A, 200ms, 1000ms);
+        context.wait_for_all_requests();
+    }
+    if (!reached_party){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "select_forced_switch_slot(): Party screen did not appear after 20 advance iterations.",
+            console
+        );
+    }
+
+    //  The forced-switch party screen may start with the cursor on the first
+    //  non-fainted slot rather than slot 1. Press left once to guarantee we
+    //  land on slot 1 (the large left panel) before doing slot arithmetic.
+    //  Pressing left from slot 1 is a no-op; from any right-column slot it
+    //  returns to slot 1.
+    context.wait_for_all_requests();
+    pbf_wait(context, 500ms);           // let queued B presses clear and screen settle
+    context.wait_for_all_requests();
+    pbf_move_left_joystick(context, {-1, 0}, 200ms, 300ms); // reset to slot 1
+
+    //  Navigate to target slot from slot 1.
+    if (game_slot_1indexed >= 2){
+        pbf_move_left_joystick(context, {+1, 0}, 200ms, 300ms);
+        for (int i = 2; i < game_slot_1indexed; i++){
+            pbf_move_left_joystick(context, {0, -1}, 200ms, 300ms);
+        }
+    }
+
+    //  Press A on the target Pokémon — this opens a context sub-menu
+    //  (SUMMARY / SEND OUT / CANCEL) rather than immediately sending them out.
+    PartySelectionWatcher selection_open(COLOR_RED);
+    context.wait_for_all_requests();
+    int ret = run_until<ProControllerContext>(
+        console, context,
+        [](ProControllerContext& ctx){
+            pbf_press_button(ctx, BUTTON_A, 200ms, 1800ms);
+        },
+        { selection_open }
+    );
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "select_forced_switch_slot(): Context sub-menu did not appear after selecting Pokémon.",
+            console
+        );
+    }
+
+    //  In the in-battle forced-switch sub-menu, SEND OUT is the first/default option.
+    //  Press A directly — no navigation required.
+    pbf_press_button(context, BUTTON_A, 200ms, 500ms);
+
+    //  Wait for the battle menu to confirm the new Pokémon is active.
+    context.wait_for_all_requests();
+    ret = wait_until(
+        console, context, std::chrono::milliseconds(10000),
+        { battle_menu }
+    );
+    if (ret < 0){
+        OperationFailedException::fire(
+            ErrorReport::SEND_ERROR_REPORT,
+            "select_forced_switch_slot(): Battle menu did not reappear after SEND OUT.",
+            console
+        );
+    }
+    context.wait_for_all_requests();
+    console.log("Forced switch complete: slot " + std::to_string(game_slot_1indexed) + " sent out.");
 }
 
 

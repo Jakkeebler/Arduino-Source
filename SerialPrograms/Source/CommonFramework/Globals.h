@@ -43,6 +43,16 @@ extern const std::string COMPILER_VERSION;
 
 extern const size_t LOG_HISTORY_LINES;
 
+extern bool USE_QT_UI;
+
+// Set a profile for program settings (/UserSettings/PROFILE_NAME/) on MacOS.
+// Have to run the program with command-line argument "open -n PATH_TO_APP --args --profile PROFILE_NAME" to set the profile and launch a new window.
+// This allows multiple instances of the program to run since settings are no longer shared.
+#if defined(__APPLE__)
+void set_startup_profile(int& argc, char* argv[]);
+const std::string& STARTUP_PROFILE();
+#endif
+
 // Path to the parent folder that holds all other folders, e.g. settings folder, screenshot folder, etc. 
 const std::string& RUNTIME_BASE_PATH();
 
@@ -79,6 +89,9 @@ const std::string& RESOURCE_PATH();
 
 // Folder path that holds Downloaded resources
 const std::string& DOWNLOADED_RESOURCE_PATH();
+
+// Folder path that holds the unit test resources.
+const std::string& UNIT_TEST_RESOURCE_PATH();
 
 // Hold ML training data.
 const std::string& TRAINING_PATH();

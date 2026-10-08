@@ -9,11 +9,14 @@
 #include "PokemonFRLG_Panels.h"
 
 #include "PokemonFRLG_Settings.h"
+#include "Programs/AutoStory/PokemonFRLG_AutoStory.h"
 #include "Programs/Farming/PokemonFRLG_ItemDuplication.h"
 #include "Programs/Farming/PokemonFRLG_LuckyEggFarmer.h"
 #include "Programs/Farming/PokemonFRLG_NuggetBridgeFarmer.h"
 #include "Programs/Farming/PokemonFRLG_PickupFarmer.h"
 #include "Programs/Farming/PokemonFRLG_EvTrainer.h"
+#include "Programs/Farming/PokemonFRLG_XPGrinder.h"
+#include "Programs/Farming/PokemonFRLG_TeamScanner.h"
 #include "Programs/ShinyHunting/PokemonFRLG_GiftReset.h"
 #include "Programs/ShinyHunting/PokemonFRLG_LegendaryReset.h"
 #include "Programs/ShinyHunting/PokemonFRLG_LegendaryRunAway.h"
@@ -25,11 +28,20 @@
 #include "Programs/RngManipulation/PokemonFRLG_StarterRng.h"
 #include "Programs/RngManipulation/PokemonFRLG_GiftRng.h"
 #include "Programs/RngManipulation/PokemonFRLG_StaticRng.h"
+#include "Programs/RngManipulation/PokemonFRLG_WildRng.h"
+#include "Programs/TestPrograms/PokemonFRLG_KantoMapPositionTest.h"
+#include "Programs/TestPrograms/PokemonFRLG_MappingMode.h"
+#include "Programs/RngManipulation/PokemonFRLG_RoamingLegendaryRng.h"
+#include "Programs/RngManipulation/PokemonFRLG_EggRng.h"
 #include "Programs/TestPrograms/PokemonFRLG_SoundListener.h"
 #include "Programs/TestPrograms/PokemonFRLG_ReadStats.h"
 #include "Programs/TestPrograms/PokemonFRLG_ReadBattleLevelUp.h"
 #include "Programs/TestPrograms/PokemonFRLG_ReadTrainerId.h"
 #include "Programs/TestPrograms/PokemonFRLG_ReadEncounter.h"
+#include "Programs/TestPrograms/PokemonFRLG_ReadParty.h"
+#include "Programs/TestPrograms/PokemonFRLG_ScanParty.h"
+#include "Programs/TestPrograms/PokemonFRLG_SummaryCalibrator.h"
+#include "Programs/TestPrograms/PokemonFRLG_SafariOptimalActionTest.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -38,7 +50,10 @@ namespace PokemonFRLG{
 
 
 PanelListFactory::PanelListFactory()
-    : PanelListDescriptor(Pokemon::STRING_POKEMON + " FireRed and LeafGreen")
+    : PanelListDescriptor(
+        Pokemon::STRING_POKEMON + " FireRed and LeafGreen",
+        RESOURCE_PATH() + "CategoryIcons/PokemonFRLG.png"
+    )
 {}
 
 std::vector<PanelEntry> PanelListFactory::make_panels() const{
@@ -47,11 +62,17 @@ std::vector<PanelEntry> PanelListFactory::make_panels() const{
     ret.emplace_back("---- Settings ----");
     ret.emplace_back(make_settings<GameSettings_Descriptor, GameSettingsPanel>());
 
+    ret.emplace_back("---- Story ----");
+    ret.emplace_back(make_single_switch_program<AutoStory_Descriptor, AutoStory>());
+
     ret.emplace_back("---- Farming ----");
     ret.emplace_back(make_single_switch_program<NuggetBridgeFarmer_Descriptor, NuggetBridgeFarmer>());
     ret.emplace_back(make_single_switch_program<PickupFarmer_Descriptor, PickupFarmer>());
     ret.emplace_back(make_single_switch_program<EvTrainer_Descriptor, EvTrainer>());
     ret.emplace_back(make_single_switch_program<LuckyEggFarmer_Descriptor, LuckyEggFarmer>());
+    ret.emplace_back(make_single_switch_program<XPGrinder_Descriptor, XPGrinder>());
+    ret.emplace_back(make_single_switch_program<TeamScanner_Descriptor, TeamScanner>());
+    ret.emplace_back(make_single_switch_program<ItemDuplication_Descriptor, ItemDuplication>());
 
     //ret.emplace_back("---- General ----");
 
@@ -65,24 +86,30 @@ std::vector<PanelEntry> PanelListFactory::make_panels() const{
 
     ret.emplace_back("---- RNG Manipulation  ----");
     ret.emplace_back(make_single_switch_program<RngHelper_Descriptor, RngHelper>());
+    ret.emplace_back(make_single_switch_program<SidHelper_Descriptor, SidHelper>());
+    ret.emplace_back(make_single_switch_program<StarterRng_Descriptor, StarterRng>());
+    ret.emplace_back(make_single_switch_program<GiftRng_Descriptor, GiftRng>());
+    ret.emplace_back(make_single_switch_program<StaticRng_Descriptor, StaticRng>());
+    ret.emplace_back(make_single_switch_program<WildRng_Descriptor, WildRng>());
+    ret.emplace_back(make_single_switch_program<RoamingLegendaryRng_Descriptor, RoamingLegendaryRng>());
 
     if (IS_BETA_VERSION || PreloadSettings::instance().DEVELOPER_MODE){
         ret.emplace_back("---- Untested/Beta/WIP ----");
-        ret.emplace_back(make_single_switch_program<ItemDuplication_Descriptor, ItemDuplication>());
-        ret.emplace_back(make_single_switch_program<SidHelper_Descriptor, SidHelper>());
-        ret.emplace_back(make_single_switch_program<StarterRng_Descriptor, StarterRng>());
-        ret.emplace_back(make_single_switch_program<GiftRng_Descriptor, GiftRng>());
-        ret.emplace_back(make_single_switch_program<StaticRng_Descriptor, StaticRng>());
+        ret.emplace_back(make_single_switch_program<EggRng_Descriptor, EggRng>());
     }
 
-    if (PreloadSettings::instance().DEVELOPER_MODE){
-        ret.emplace_back("---- Developer Tools ----");
-        ret.emplace_back(make_single_switch_program<SoundListener_Descriptor, SoundListener>());
-        ret.emplace_back(make_single_switch_program<ReadStats_Descriptor, ReadStats>());
-        ret.emplace_back(make_single_switch_program<ReadBattleLevelUp_Descriptor, ReadBattleLevelUp>());
-        ret.emplace_back(make_single_switch_program<ReadTrainerId_Descriptor, ReadTrainerId>());
-        ret.emplace_back(make_single_switch_program<ReadEncounter_Descriptor, ReadEncounter>());    
-    }
+    ret.emplace_back("---- Tools ----");
+    ret.emplace_back(make_single_switch_program<MappingMode_Descriptor, MappingMode>());
+    ret.emplace_back(make_single_switch_program<KantoMapPositionTest_Descriptor, KantoMapPositionTest>());
+    ret.emplace_back(make_single_switch_program<ScanParty_Descriptor, ScanParty>());
+    ret.emplace_back(make_single_switch_program<SummaryCalibrator_Descriptor, SummaryCalibrator>());
+    ret.emplace_back(make_single_switch_program<SoundListener_Descriptor, SoundListener>());
+    ret.emplace_back(make_single_switch_program<ReadStats_Descriptor, ReadStats>());
+    ret.emplace_back(make_single_switch_program<ReadBattleLevelUp_Descriptor, ReadBattleLevelUp>());
+    ret.emplace_back(make_single_switch_program<ReadTrainerId_Descriptor, ReadTrainerId>());
+    ret.emplace_back(make_single_switch_program<ReadEncounter_Descriptor, ReadEncounter>());
+    ret.emplace_back(make_single_switch_program<ReadParty_Descriptor, ReadParty>());
+    ret.emplace_back(make_single_switch_program<SafariOptimalActionTest_Descriptor, SafariOptimalActionTest>());
 
     return ret;
 }

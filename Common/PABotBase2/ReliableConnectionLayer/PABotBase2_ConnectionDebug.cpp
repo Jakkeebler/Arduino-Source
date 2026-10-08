@@ -120,7 +120,7 @@ void PacketSender::print(bool ascii) const{
     std::cout << "Stream Offset (resv):  " << m_stream_offset_uncommitted << std::endl;
     std::cout << "Retransmit Seqnum:     " << (int)m_retransmit_seqnum << std::endl;
     for (uint8_t seqnum = m_slot_head; seqnum != m_slot_tail; seqnum++){
-        size_t offset = m_offsets[seqnum & SLOTS_MASK];
+        size_t offset = m_offsets[seqnum & SLOT_MASK];
         std::cout << "Offset: " << offset << std::endl;
         PacketHeader_print((const PacketHeader*)(m_buffer + offset), ascii);
     }
@@ -132,23 +132,24 @@ void StreamCoalescer::print(bool ascii) const{
     std::cout << "---- StreamCoalescer ---- (Start)" << std::endl;
     std::cout << "Slot Head:         " << (int)m_slot_head << std::endl;
     std::cout << "Slot Tail:         " << (int)m_slot_tail << std::endl;
+    std::cout << "Stream Free:       " << m_stream_free << std::endl;
     std::cout << "Stream Head:       " << m_stream_head << std::endl;
     std::cout << "Stream Tail:       " << m_stream_tail << std::endl;
     for (uint8_t seqnum = m_slot_head; seqnum != m_slot_tail; seqnum++){
-        uint8_t index = seqnum & SLOTS_MASK;
+        uint8_t index = seqnum & SLOT_MASK;
         uint8_t size = m_lengths[index];
         std::cout << "    [" << (int)seqnum << "]: ";
         if (size == 0){
             std::cout << std::endl;
             continue;
         }
-        if (size == 255){
+        if (size == 0xff){
             std::cout << " non-stream" << std::endl;
             continue;
         }
 
-        uint16_t offset_s = m_offsets[index];
-        uint16_t offset_e = offset_s + size;
+        uint16_t offset_e = m_end_offsets[index];
+        uint16_t offset_s = offset_e - size;
         std::cout << "[" << offset_s << ":" << offset_e << "] => ";
 
         offset_s &= BUFFER_MASK;

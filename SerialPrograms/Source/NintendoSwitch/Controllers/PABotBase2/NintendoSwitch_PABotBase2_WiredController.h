@@ -26,6 +26,8 @@ class PABotBase2_WiredController final :
 public:
     using ContextType = ProControllerContext;
 
+    static void add_message_loggers(PABotBase2::MessageLogger& message_logger);
+
 
 public:
     PABotBase2_WiredController(
@@ -37,9 +39,6 @@ public:
 
     virtual Logger& logger() override{
         return m_logger;
-    }
-    virtual RecursiveThrottler& logging_throttler() override{
-        return m_logging_throttler;
     }
     virtual bool is_ready() const override{
         return PABotBase2_Controller::is_ready();

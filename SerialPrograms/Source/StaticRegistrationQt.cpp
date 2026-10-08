@@ -36,8 +36,8 @@
 #include "CommonFramework/Options/QtWidget/LabelCellWidget.h"
 #include "CommonFramework/Notifications/EventNotificationWidget.h"
 
-//  Integrations
-#include "Integrations/DiscordIntegrationSettingsWidget.h"
+// Resource Download
+#include "CommonFramework/ResourceDownload/SettingsResourceDownloadWidget.h"
 
 //  Common Tools
 #include "CommonTools/Options/QtWidgets/StringSelectWidget.h"
@@ -69,6 +69,7 @@ void register_all_statics(){
     RegisterConfigWidget<ButtonOptionWidget>();
     RegisterConfigWidget<CheckboxDropdownCellWidget>();
     RegisterConfigWidget<ColorCellWidget>();
+    RegisterConfigWidget<ColorOptionWidget>();
     RegisterConfigWidget<DateTimeCellWidget>();
     RegisterConfigWidget<DateTimeOptionWidget>();
     RegisterConfigWidget<EditableTableWidget>();
@@ -99,8 +100,12 @@ void register_all_statics(){
     RegisterConfigWidget<LabelCellWidget>();
     RegisterConfigWidget<TestButtonWidget>();
 
-    //  Integrations
-    RegisterConfigWidget<Integration::DiscordIntegrationSettingsWidget>();
+    // Resource Download
+    RegisterConfigWidget<SettingsDownloadButtonWidget>();
+    RegisterConfigWidget<SettingsDeleteButtonWidget>();
+    RegisterConfigWidget<SettingsCancelButtonWidget>();
+    RegisterConfigWidget<SettingsProgressBarWidget>();
+    RegisterConfigWidget<SettingsDownloadErrorWidget>();
 
     //  Common Tools
     RegisterConfigWidget<StringSelectCellWidget>();

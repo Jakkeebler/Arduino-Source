@@ -10,6 +10,7 @@
 #include "CommonFramework/ProgramStats/StatsTracking.h"
 #include "CommonTools/StartupChecks/VideoResolutionCheck.h"
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_PushButtons.h"
+#include "NintendoSwitch/Programs/NintendoSwitch_GameEntry.h"
 #include "Pokemon/Pokemon_Strings.h"
 #include "PokemonSV/Inference/Boxes/PokemonSV_BoxDetection.h"
 #include "PokemonSV/Programs/PokemonSV_MenuNavigation.h"
@@ -38,12 +39,15 @@ EggHatcher_Descriptor::EggHatcher_Descriptor()
 struct EggHatcher_Descriptor::Stats : public StatsTracker{
     Stats()
         : m_hatched(m_stats["Hatched"])
+        , m_attacked(m_stats["Attacked"])
         , m_errors(m_stats["Errors"])
     {
         m_display_order.emplace_back("Hatched");
+        m_display_order.emplace_back("Attacked", HIDDEN_IF_ZERO);
         m_display_order.emplace_back("Errors", HIDDEN_IF_ZERO);
     }
     std::atomic<uint64_t>& m_hatched;
+    std::atomic<uint64_t>& m_attacked;
     std::atomic<uint64_t>& m_errors;
 };
 std::unique_ptr<StatsTracker> EggHatcher_Descriptor::make_stats() const{
@@ -72,13 +76,22 @@ EggHatcher::EggHatcher()
         LockMode::UNLOCK_WHILE_RUNNING,
         1, 1, 32
     )
+    , m_battle_ai_description(
+        "<b>Battle AI if Attacked:</b><br>"
+        "Occasionally (especially on the Switch 2), you will get attacked by wild " + STRING_POKEMON + ". "
+        "If the following section is enabled, it attempt to recover by killing the wild " + STRING_POKEMON + ". "
+        "If disabled, the program will instead reset the game. "
+        "This table applies to the egg hatching " + STRING_POKEMON + " (the Flame Body one)."
+    )
+    , BATTLE_AI(false, GroupOption::EnableMode::DEFAULT_ENABLED, 1)
     , HAS_CLONE_RIDE_POKEMON(
         "<b>Cloned Ride Legendary 2nd in Party:</b><br>"
         "Ride legendary cannot be cloned after patch 1.0.1. To preserve the existing clone while hatching eggs, "
         "place it as second in party before starting the program.</b>"
         "The program will skip the first row of eggs in the box as a result.",
         LockMode::LOCK_WHILE_RUNNING,
-        false)
+        false
+    )
     , NOTIFICATION_STATUS_UPDATE("Status Update", true, false, std::chrono::seconds(3600))
     , NOTIFICATIONS({
         &NOTIFICATION_STATUS_UPDATE,
@@ -90,6 +103,8 @@ EggHatcher::EggHatcher()
     PA_ADD_OPTION(GO_HOME_WHEN_DONE);
     PA_ADD_OPTION(START_LOCATION);
     PA_ADD_OPTION(BOXES);
+    PA_ADD_OPTION(m_battle_ai_description);
+    PA_ADD_OPTION(BATTLE_AI);
     PA_ADD_OPTION(HAS_CLONE_RIDE_POKEMON);
     PA_ADD_OPTION(NOTIFICATIONS);
 }
@@ -142,14 +157,23 @@ void EggHatcher::hatch_one_box(SingleSwitchProgramEnvironment& env, ProControlle
 
         switch (START_LOCATION){
         case StartLocation::ZeroGateFlyingSpot:
-            hatch_eggs_at_zero_gate(env.program_info(), env.console, context, num_eggs, hatched_callback);
+            hatch_eggs_at_zero_gate(
+                env,
+                env.console,
+                context,
+                &NOTIFICATION_ERROR_RECOVERABLE,
+                &BATTLE_AI,
+                &stats.m_attacked,
+                num_eggs,
+                hatched_callback
+            );
             reset_position_at_zero_gate(env.program_info(), env.console, context);
             break;
         case StartLocation::AnywhereOnRide:
         case StartLocation::AnywhereOffRide: // the program already pressed + to get on ride at start
         {
             const bool on_ride = true;
-            hatch_eggs_anywhere(env.program_info(), env.console, context, on_ride, num_eggs, hatched_callback);
+            hatch_eggs_anywhere(env, env.console, context, on_ride, num_eggs, hatched_callback);
             break;
         }
         default:
@@ -177,8 +201,9 @@ void EggHatcher::program(SingleSwitchProgramEnvironment& env, ProControllerConte
     assert_16_9_720p_min(env.logger(), env.console);
 
     EggHatcher_Descriptor::Stats& stats = env.current_stats<EggHatcher_Descriptor::Stats>();
+
     //  Connect the controller.
-    pbf_press_button(context, BUTTON_L, 80ms, 0ms);
+    require_player(env.console, context, BUTTON_L);
 
     if (START_LOCATION == StartLocation::AnywhereOffRide){
         // Get on ride:

@@ -13,16 +13,18 @@
 
 namespace PokemonAutomation{
 
+class Cancellable;
+
 
 class StreamConnectionPushing{
 public:
     virtual ~StreamConnectionPushing(){}
-    virtual void stop(){};
+    virtual void stop() noexcept{};
 
     void add_listener(StreamListener& listener){
         m_listeners.add(listener);
     }
-    void remove_listener(StreamListener& listener){
+    void remove_listener(StreamListener& listener) noexcept{
         m_listeners.remove(listener);
     }
 
@@ -41,12 +43,18 @@ protected:
 
 class ReliableStreamConnectionPushing : public StreamConnectionPushing{
 public:
-    virtual size_t reliable_send_blocking(
-        const void* data, size_t bytes,
-        WallDuration timeout = WallDuration::max()
-    ) = 0;
-    virtual bool reliable_try_send_all_or_nothing(
+    //  Throws exception if cancelled or connection is dead.
+    virtual void reliable_send_all_or_nothing(
+        Cancellable* cancellable,
         const void* data, size_t bytes
+    ) = 0;
+
+    //  Returns false if cannot send within timeout.
+    //  Throws exception if cancelled or connection is dead.
+    [[nodiscard]] virtual bool reliable_send_all_or_nothing(
+        Cancellable* cancellable,
+        const void* data, size_t bytes,
+        WallClock deadline
     ) = 0;
 
 protected:

@@ -47,7 +47,7 @@ jobs:
         echo "UPLOAD_FOLDER=$UPLOAD_FOLDER" >> $GITHUB_ENV
 
     - name: Checkout Arduino-Source
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         path: 'Arduino-Source'
         submodules: 'recursive'
@@ -55,7 +55,9 @@ jobs:
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
       with:
-        version: '6.10.2'
+        # Delete aqtsource once https://github.com/miurahr/aqtinstall/issues/1007 is fixed and released
+        aqtsource: 'git+https://github.com/miurahr/aqtinstall'
+        version: '6.11.1'
         modules: 'qtmultimedia qtserialport'
 
     - name: Install dependencies (Ubuntu)
@@ -66,19 +68,20 @@ jobs:
         sudo apt upgrade
         sudo apt install clang-tools libopencv-dev libsystemd-dev
 
-        sudo apt install ./3rdPartyBinaries/libdpp-10.0.28-linux-x64.deb
+        sudo apt install ./3rdPartyBinaries/libdpp-10.1.5-linux-x64.deb
 
     - name: Install dependencies (Mac)
       if: startsWith(inputs.os, 'mac')
       run: |
         cd Arduino-Source
-        brew install opencv onnxruntime
+        brew install opencv@4 onnxruntime
 
         brew tap-new --no-git PA/libdpp
+        brew trust PA/libdpp
         FORMULA_DIR="$(brew --repo PA/libdpp)/Formula"
         mkdir -p "$FORMULA_DIR"
-        cp 3rdPartyBinaries/libdpp@10.0.28.rb "$FORMULA_DIR/"
-        brew install libdpp@10.0.28
+        cp 3rdPartyBinaries/libdpp@10.1.5.rb "$FORMULA_DIR/"
+        brew install libdpp@10.1.5
 
     - name: Generate binaries
       run: |
@@ -92,7 +95,10 @@ jobs:
       if: inputs.upload-build
       shell: bash
       run: |
-        echo https://github.com/${{github.repository}}/commit/${{github.sha}} > ${{env.UPLOAD_FOLDER}}/version.txt
+        {
+          echo "https://github.com/${{github.repository_owner}}/Arduino-Source/commit/$(git -C Arduino-Source rev-parse HEAD)"
+          echo "https://github.com/${{github.repository_owner}}/Packages/commit/$(git -C Arduino-Source/Packages rev-parse HEAD)"
+        } > ${{env.UPLOAD_FOLDER}}/version.txt
 
     - name: Upload Build
       uses: actions/upload-artifact@v7
@@ -102,7 +108,7 @@ jobs:
         path: ${{env.UPLOAD_FOLDER}}
 
     - name: Checkout CommandLineTests
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       if: inputs.run-tests
       with:
         repository: 'PokemonAutomation/CommandLineTests'

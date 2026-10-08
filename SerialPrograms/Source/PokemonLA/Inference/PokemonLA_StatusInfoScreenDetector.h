@@ -8,6 +8,7 @@
 #ifndef PokemonAutomation_PokemonLA_StatusInfoScreenDetector_H
 #define PokemonAutomation_PokemonLA_StatusInfoScreenDetector_H
 
+#include "Common/Cpp/TestRunners/UnitTest.h"
 #include "CommonFramework/Language.h"
 #include "CommonFramework/Logging/Logger.h"
 #include "CommonFramework/VideoPipeline/VideoOverlay.h"
@@ -24,6 +25,12 @@ PokemonDetails read_status_info(
     Language language
 );
 
+
+
+std::string read_pokemon_info_from_words(const std::vector<std::string>& keywords, Language& language, PokemonDetails& details);
+std::string test_pokemon_details(const PokemonDetails& details, const PokemonDetails& target);
+
+void add_tests_StatusInfoScreenDetector(UnitTestDatabase& database);
 
 
 

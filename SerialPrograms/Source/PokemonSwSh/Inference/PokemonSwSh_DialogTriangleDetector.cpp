@@ -7,7 +7,9 @@
 #include <stdint.h>
 #include "Common/Cpp/Color.h"
 #include "Common/Cpp/Logging/AbstractLogger.h"
+#include "Common/Cpp/TestRunners/UnitTestDatabase.h"
 #include "Kernels/Waterfill/Kernels_Waterfill_Types.h"
+#include "CommonFramework/Globals.h"
 #include "CommonFramework/VideoPipeline/VideoOverlayScopes.h"
 #include "CommonTools/Images/WaterfillUtilities.h"
 #include "CommonTools/ImageMatch/WaterfillTemplateMatcher.h"
@@ -22,10 +24,7 @@ namespace NintendoSwitch{
 namespace PokemonSwSh{
 
 
-namespace{
-    // This box covers all possible locations of the black triangle arrow
-    ImageFloatBox BLACK_TRIANGLE_BOX{0.771, 0.901, 0.031, 0.069};
-}
+
 
 class DialogTriangleMatcher : public ImageMatch::WaterfillTemplateMatcher{
 public:
@@ -53,52 +52,72 @@ const DialogTriangleMatcher& DialogTriangleMatcher::instance(){
 
 
 
+
 DialogTriangleDetector::DialogTriangleDetector(
-    Logger& logger, VideoOverlay& overlay,
-    bool stop_on_detected
+    Color color,
+    ImageFloatBox box
 )
-    : VisualInferenceCallback("DialogTriangleDetector")
-    , m_logger(logger)
-    , m_stop_on_detected(stop_on_detected)
+    : m_color(color)
+    , m_box(box)
 {}
 
-
 void DialogTriangleDetector::make_overlays(VideoOverlaySet& items) const{
-    items.add(COLOR_RED, BLACK_TRIANGLE_BOX);
+    items.add(m_color, m_box);
 }
-bool DialogTriangleDetector::process_frame(const ImageViewRGB32& frame, WallClock timestamp){
+bool DialogTriangleDetector::detect(const ImageViewRGB32& screen){
     const std::vector<std::pair<uint32_t, uint32_t>> filters = {
         {combine_rgb(0, 0, 0), combine_rgb(50, 50, 50)}
     };
-    
-    const double screen_rel_size = (frame.height() / 1080.0);
+
+    const double screen_rel_size = (screen.height() / 1080.0);
     const size_t min_size = size_t(screen_rel_size * screen_rel_size * 500.0);
 
-    const bool detected = match_template_by_waterfill(
-        frame.size(),
-        extract_box_reference(frame, BLACK_TRIANGLE_BOX), 
+    return match_template_by_waterfill(
+        screen.size(),
+        extract_box_reference(screen, m_box),
         DialogTriangleMatcher::instance(),
         filters,
         {min_size, SIZE_MAX},
         80,
         [](Kernels::Waterfill::WaterfillObject& object) -> bool { return true; }
     );
-
-    if (detected){
-        m_logger.log("Detected dialog black triangle.", COLOR_PURPLE);
-    }
-
-    m_detected.store(detected, std::memory_order_release);
-
-#if 0
-    if (detected){
-        static size_t c = 0;
-        frame.save("DialogTriangleDetectorTriggered-" + std::to_string(c++) + ".png");
-    }
-#endif
-
-    return detected && m_stop_on_detected;
 }
+
+
+
+
+
+
+
+
+class Test_DialogTriangleDetector : public UnitTest{
+public:
+    Test_DialogTriangleDetector(
+        const std::string& image,
+        bool expected
+    )
+        : UnitTest("PokemonSwSh::DialogTriangleDetector - " + image)
+        , m_image(UNIT_TEST_RESOURCE_PATH() + image)
+        , m_expected(expected)
+    {}
+
+    virtual UnitTestResult run(Logger& logger, CancellableScope& scope) const override{
+        DialogTriangleDetector detector(COLOR_RED);
+        ImageRGB32 image(m_image);
+        return detector.detect(image) == m_expected;
+    };
+
+private:
+    std::string m_image;
+    bool m_expected;
+};
+
+
+void add_tests_DialogTriangleDetector(UnitTestDatabase& database){
+
+}
+
+
 
 
 

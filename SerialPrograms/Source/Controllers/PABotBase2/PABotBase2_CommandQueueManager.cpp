@@ -106,29 +106,29 @@ uint8_t CommandQueueManager::send_command(Cancellable* cancellable, MessageHeade
             command.id = m_command_seqnum;
 
             //  Wait until the slot is available.
-            auto iter = m_pending_commands.find(command.id);
-            if (iter != m_pending_commands.end()){
+            bool success = m_pending_commands.emplace(
+                command.id,
+                std::make_shared<CommandHandle>()
+            ).second;
+            if (!success){
                 continue;
             }
 
-            iter = m_pending_commands.emplace(
-                command.id,
-                std::make_shared<CommandHandle>()
-            ).first;
-
-            bool sent;
+            m_lock.unlock();
             try{
-                sent = m_connection.reliable_try_send_all_or_nothing(&command, command.message_bytes);
+                m_connection.reliable_send_all_or_nothing(
+                    cancellable,
+                    &command, command.message_bytes
+                );
             }catch (...){
-                m_pending_commands.erase(iter);
+                m_lock.lock();
+                m_pending_commands.erase(command.id);
                 throw;
             }
+            m_lock.lock();
 
-            if (sent){
-                m_command_seqnum++;
-                break;
-            }
-            m_pending_commands.erase(iter);
+            m_command_seqnum++;
+            break;
         }
     }
 //    cout << "Post send 0: " << (unsigned)command.id << endl;
@@ -169,15 +169,29 @@ bool CommandQueueManager::try_push_pending_specials() noexcept{
     message.message_bytes = sizeof(MessageHeader);
     message.opcode = m_pending_special;
     message.id = 0;
+
+    m_lock.unlock();
+
+    bool sent = false;
     try{
-        if (m_connection.reliable_try_send_all_or_nothing(&message, message.message_bytes)){
-            m_pending_special = PABB2_MESSAGE_OPCODE_INVALID;
-            m_pending_commands.clear();
-            m_message_loggers.log_send(m_logger, GlobalSettings::instance().LOG_EVERYTHING, &message);
-            return true;
-        }
+        sent = m_connection.reliable_send_all_or_nothing(
+            nullptr,
+            &message, message.message_bytes,
+            current_time()
+        );
     }catch (...){}
-    return false;
+
+    m_lock.lock();
+
+    if (!sent){
+        return false;
+    }
+
+    m_pending_special = PABB2_MESSAGE_OPCODE_INVALID;
+    m_pending_commands.clear();
+
+    m_message_loggers.log_send(m_logger, GlobalSettings::instance().LOG_EVERYTHING, &message);
+    return true;
 }
 
 

@@ -7,6 +7,7 @@
 #ifndef PokemonAutomation_Controllers_ControllerStateTable_H
 #define PokemonAutomation_Controllers_ControllerStateTable_H
 
+#include <map>
 #include "Common/Cpp/CancellableScope.h"
 #include "Common/Cpp/Options/GroupOption.h"
 #include "Common/Cpp/Options/EnumDropdownOption.h"
@@ -53,7 +54,12 @@ public:
         std::string label,
         LockMode lock_while_running
     )
-        : EditableTableOption(std::move(label), lock_while_running)
+        : EditableTableOption(
+            std::move(label),
+            lock_while_running,
+            true,
+            50
+        )
         , m_type(type)
     {}
 
@@ -107,6 +113,9 @@ public:
 public:
     virtual void on_config_value_changed(void* object) override;
 
+    virtual void load_json(const JsonValue& json) override;
+    virtual JsonValue to_json() const override;
+
 private:
     static EnumDropdownDatabase<ControllerClass> make_database(
         const std::vector<ControllerClass>& controller_list
@@ -121,6 +130,8 @@ private:
     EnumDropdownOption<ControllerClass> m_type;
 
     ControllerCommandTable m_table;
+
+    std::map<ControllerClass, JsonValue> m_saved;
 };
 
 

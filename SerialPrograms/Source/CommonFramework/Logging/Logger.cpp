@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include "Common/Cpp/Logging/TaggedLogger.h"
+#include "Common/Cpp/Logging/GlobalLogger.h"
 #include "Logger.h"
 
 namespace PokemonAutomation{
@@ -26,15 +27,16 @@ public:
     {}
 
     virtual void log(const std::string& msg, Color color = Color()) override{
+        printf("%s\n", msg.c_str());
         std::cout << msg << std::endl;
         m_logger.log(msg, color);
     }
     virtual void log(std::string&& msg, Color color = Color()) override{
-        std::cout << msg << std::endl;
+        printf("%s\n", msg.c_str());
         m_logger.log(std::move(msg), color);
     }
     virtual void log(const char* msg, Color color = Color()) override{
-        std::cout << msg << std::endl;
+        printf("%s\n", msg);
         m_logger.log(msg, color);
     }
 

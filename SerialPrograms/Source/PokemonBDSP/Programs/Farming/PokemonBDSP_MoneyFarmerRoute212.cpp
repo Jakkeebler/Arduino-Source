@@ -10,6 +10,7 @@
 #include "CommonTools/Async/InferenceRoutines.h"
 #include "CommonTools/StartupChecks/StartProgramChecks.h"
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_PushButtons.h"
+#include "NintendoSwitch/Programs/NintendoSwitch_GameEntry.h"
 #include "Pokemon/Pokemon_Strings.h"
 #include "PokemonBDSP/PokemonBDSP_Settings.h"
 #include "PokemonBDSP/Programs/PokemonBDSP_GlobalRoomHeal.h"
@@ -194,11 +195,8 @@ bool MoneyFarmerRoute212::battle(SingleSwitchProgramEnvironment& env, ProControl
 
         default:
             stats.m_errors++;
-            OperationFailedException::fire(
-                ErrorReport::SEND_ERROR_REPORT,
-                "Timed out after 30 seconds.",
-                env.console
-            );
+            env.log("Timed out after 30 seconds. Assume battle ended.", COLOR_RED);
+            return false;
         }
     }
 
@@ -310,7 +308,7 @@ void MoneyFarmerRoute212::program(SingleSwitchProgramEnvironment& env, ProContro
     };
 
     //  Connect the controller.
-    pbf_press_button(context, BUTTON_B, 40ms, 40ms);
+    require_player(env.console, context, BUTTON_B);
 
     bool need_to_charge = true;
     if (START_LOCATION == StartLocation::Hearthome){

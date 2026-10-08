@@ -376,7 +376,12 @@ AutoStory_Descriptor::AutoStory_Descriptor()
         "Progress through the mainstory of SV.",
         ProgramControllerClass::StandardController_RequiresPrecision,
         FeedbackType::VIDEO_AUDIO,
-        AllowCommandsWhenRunning::DISABLE_COMMANDS
+        AllowCommandsWhenRunning::DISABLE_COMMANDS,
+        false,
+        { 
+            "PokemonSV/AreaZero",
+            // "PaddleOCR" // not needed since an OCR library is bundled with this program
+        }
     )
 {}
 
@@ -1292,8 +1297,8 @@ void AutoStory::program(SingleSwitchProgramEnvironment& env, ProControllerContex
         }
     }
 
-    // Connect controller
-    pbf_press_button(context, BUTTON_L, 160ms, 160ms);
+    //  Connect the controller.
+    require_player(env.console, context, BUTTON_L);
 
     if (ENABLE_ADVANCED_MODE){
         env.console.log("Start Checkpoint " + ALL_AUTO_STORY_CHECKPOINT_LIST()[get_start_checkpoint_index()]->name(), COLOR_ORANGE);        

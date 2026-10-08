@@ -12,6 +12,7 @@
 #include "NintendoSwitch/Commands/NintendoSwitch_Commands_Superscalar.h"
 #include "NintendoSwitch/Inference/NintendoSwitch2_BinarySliderDetector.h"
 #include "NintendoSwitch/NintendoSwitch_ConsoleHandle.h"
+#include "NintendoSwitch/Programs/NintendoSwitch_GameEntry.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -58,7 +59,7 @@ ConsoleType settings_detect_console_type(
         break;
     default:
         OperationFailedException::fire(
-            ErrorReport::SEND_ERROR_REPORT,
+            ErrorReport::NO_ERROR_REPORT,
             "Unable to detect if this Switch 2 model is international or Japan-locked.",
             console, std::move(snapshot)
         );
@@ -89,34 +90,32 @@ void home_to_settings_Switch2_procon_blind(
     }
 
     Milliseconds tv = context->timing_variation();
-    Milliseconds unit = 24ms + tv;
+    Milliseconds unit0 = 24ms + tv;
+    Milliseconds unit1 = 32ms + tv;
 
-    ssf_issue_scroll(context, SSF_SCROLL_RIGHT, unit);
-    ssf_issue_scroll(context, SSF_SCROLL_RIGHT, unit);
-    ssf_issue_scroll(context, SSF_SCROLL_RIGHT, unit);
+    ssf_issue_scroll(context, SSF_SCROLL_RIGHT, unit1);
+    ssf_issue_scroll(context, SSF_SCROLL_RIGHT, unit1);
 
     //  Down twice in case we drop one.
-    ssf_issue_scroll(context, SSF_SCROLL_DOWN, unit);
-    ssf_issue_scroll(context, SSF_SCROLL_DOWN, unit);
+    ssf_issue_scroll(context, SSF_SCROLL_DOWN, unit1);
+    ssf_issue_scroll(context, SSF_SCROLL_DOWN, unit1);
 
-    ssf_issue_scroll(context, SSF_SCROLL_LEFT, unit);
+    ssf_issue_scroll(context, SSF_SCROLL_RIGHT, unit1);
+    ssf_issue_scroll(context, SSF_SCROLL_RIGHT, unit1);
 
     //  Two A presses in case we drop the 1st one.
-    ssf_press_button(context, BUTTON_A, unit);
-    ssf_press_button(context, BUTTON_A, unit);
+    ssf_press_button(context, BUTTON_A, unit0);
+    ssf_press_button(context, BUTTON_A, unit0);
 
     for (size_t c = 0; c < 40; c++){
-        ssf_issue_scroll(context, SSF_SCROLL_DOWN, unit);
+        ssf_issue_scroll(context, SSF_SCROLL_DOWN, unit0);
     }
-    ssf_issue_scroll(context, SSF_SCROLL_DOWN, 1000ms, 1000ms, unit);
+    ssf_issue_scroll(context, SSF_SCROLL_DOWN, 1000ms, 1000ms, unit0);
 
-    //  Scroll left and press A to exit the sleep menu if we happened to
-    //  land there.
-    ssf_issue_scroll(context, SSF_SCROLL_LEFT, unit);
-    ssf_press_button(context, BUTTON_A, unit);
+    ssf_press_button(context, BUTTON_A, unit0);
 
     for (size_t c = 0; c < 2; c++){
-        ssf_issue_scroll(context, SSF_SCROLL_RIGHT, unit);
+        ssf_issue_scroll(context, SSF_SCROLL_RIGHT, unit0);
     }
 }
 void home_to_settings_Switch2_joycon_blind(
@@ -128,32 +127,30 @@ void home_to_settings_Switch2_joycon_blind(
     }
 
     Milliseconds tv = context->timing_variation();
-    Milliseconds unit = 24ms + tv;
+    Milliseconds unit0 = 24ms + tv;
+    Milliseconds unit1 = 32ms + tv;
 
-    pbf_move_joystick(context, {+1, 0}, 2*unit, unit);
-    pbf_move_joystick(context, {+1, 0}, 2*unit, unit);
-    pbf_move_joystick(context, {+1, 0}, 2*unit, unit);
+    pbf_move_joystick(context, {+1, 0}, 2*unit1, unit1);
+    pbf_move_joystick(context, {+1, 0}, 2*unit1, unit1);
 
     //  Down twice in case we drop one.
-    pbf_move_joystick(context, {0, -1}, 2*unit, unit);
-    pbf_move_joystick(context, {0, -1}, 2*unit, unit);
+    pbf_move_joystick(context, {0, -1}, 2*unit1, unit1);
+    pbf_move_joystick(context, {0, -1}, 2*unit1, unit1);
 
-    pbf_move_joystick(context, {-1, 0}, 2*unit, unit);
+    pbf_move_joystick(context, {+1, 0}, 2*unit1, unit1);
+    pbf_move_joystick(context, {+1, 0}, 2*unit1, unit1);
 
     //  Press A multiple times to make sure one goes through.
-    pbf_press_button(context, BUTTON_A, 2*unit, unit);
-    pbf_press_button(context, BUTTON_A, 2*unit, unit);
-    pbf_press_button(context, BUTTON_A, 2*unit, unit);
+    pbf_press_button(context, BUTTON_A, 2*unit0, unit0);
+    pbf_press_button(context, BUTTON_A, 2*unit0, unit0);
+    pbf_press_button(context, BUTTON_A, 2*unit0, unit0);
 
     pbf_move_joystick(context, {0, -1}, 2000ms, 0ms);
 
-    //  Scroll left and press A to exit the sleep menu if we happened to
-    //  land there.
-    pbf_move_joystick(context, {-1, 0}, 2*unit, unit);
-    pbf_press_button(context, BUTTON_A, 2*unit, unit);
+    pbf_press_button(context, BUTTON_A, 2*unit0, unit0);
 
     for (size_t c = 0; c < 2; c++){
-        pbf_move_joystick(context, {+1, 0}, 2*unit, unit);
+        pbf_move_joystick(context, {+1, 0}, 2*unit0, unit0);
     }
 }
 
@@ -243,9 +240,21 @@ void home_to_date_time_Switch2_procon_feedback(
     bool to_date_change
 ){
     console.log("home_to_date_time_Switch2_procon_feedback()");
-    home_to_settings_Switch2_procon_blind(context);
-    ConsoleType console_type = settings_detect_console_type(console, context);
-    settings_to_date_time_Switch2_all_blind(console, context, console_type, to_date_change);
+    for (int c = 0; c < 5; c++){
+        try{
+            home_to_settings_Switch2_procon_blind(context);
+            ConsoleType console_type = settings_detect_console_type(console, context);
+            settings_to_date_time_Switch2_all_blind(console, context, console_type, to_date_change);
+            return;
+        }catch (OperationFailedException&){
+            go_home(console, context);
+        }
+    }
+    OperationFailedException::fire(
+        ErrorReport::SEND_ERROR_REPORT,
+        "Unable to navigate to date/time after 5 attempts.",
+        console, console.video().snapshot_latest_blocking()
+    );
 }
 
 
@@ -256,10 +265,22 @@ void home_to_date_time_Switch2_joycon_feedback(
     ConsoleHandle& console, JoyconContext& context,
     bool to_date_change
 ){
-    console.log("home_to_date_time_Switch2_joycon_feedback()");
-    home_to_settings_Switch2_joycon_blind(context);
-    ConsoleType console_type = settings_detect_console_type(console, context);
-    settings_to_date_time_Switch2_all_blind(console, context, console_type, to_date_change);
+    console.log("home_to_date_time_Switch2_procon_feedback()");
+    for (int c = 0; c < 5; c++){
+        try{
+            home_to_settings_Switch2_joycon_blind(context);
+            ConsoleType console_type = settings_detect_console_type(console, context);
+            settings_to_date_time_Switch2_all_blind(console, context, console_type, to_date_change);
+            return;
+        }catch (OperationFailedException&){
+            go_home(console, context);
+        }
+    }
+    OperationFailedException::fire(
+        ErrorReport::SEND_ERROR_REPORT,
+        "Unable to navigate to date/time after 5 attempts.",
+        console, console.video().snapshot_latest_blocking()
+    );
 }
 
 

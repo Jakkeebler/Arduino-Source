@@ -30,6 +30,7 @@ class ReliableStreamConnection final
     , private UnreliableStreamSender
     , private PacketRunner
     , private StreamListener
+    , private Cancellable::CancelListener
 {
 public:
     ReliableStreamConnection(
@@ -42,9 +43,7 @@ public:
     );
     ~ReliableStreamConnection();
 
-    virtual void stop() override{
-        cancel(nullptr);
-    }
+    virtual void stop() noexcept override;
     virtual bool cancel(std::exception_ptr exception) noexcept override;
 
     bool reset(WallDuration timeout = WallDuration::max());
@@ -70,7 +69,7 @@ public:
     void send_request(uint8_t opcode);
 
     void send_stream(const void* data, size_t bytes){
-        reliable_send_blocking(data, bytes, WallDuration::max());
+        reliable_send_all_or_nothing(nullptr, data, bytes);
     }
 
 
@@ -88,17 +87,30 @@ private:
     //  Send
 
     void send_ack(uint8_t seqnum, uint8_t opcode);
-    void send_ack_u16(uint8_t seqnum, uint8_t opcode, uint16_t data);
+    void send_ack_u32(uint8_t seqnum, uint8_t opcode, uint32_t data);
 
     void retransmit_thread();
 
 
 private:
-//    virtual size_t reliable_send_available() const override;
-    virtual size_t reliable_send_blocking(const void* data, size_t bytes, WallDuration timeout) override;
-    virtual bool reliable_try_send_all_or_nothing(const void* data, size_t bytes) override;
+    virtual void reliable_send_all_or_nothing(
+        Cancellable* cancellable,
+        const void* data, size_t bytes
+    ) override;
+    virtual bool reliable_send_all_or_nothing(
+        Cancellable* cancellable,
+        const void* data, size_t bytes,
+        WallClock deadline
+    ) override;
     virtual void on_recv(const void* data, size_t bytes) override;
     virtual size_t unreliable_send(const void* data, size_t bytes) noexcept override;
+
+
+private:
+    virtual void on_cancellable_cancel(
+        Cancellable& cancellable,
+        std::exception_ptr reason
+    ) override;
 
 
 private:
@@ -133,8 +145,8 @@ private:
     uint32_t m_remote_protocol;
 
 //    std::atomic<bool> m_version_verified;
-    uint8_t m_remote_slot_capacity;
-    uint16_t m_remote_buffer_capacity;
+    uint8_t m_max_unacked_packets;
+    uint16_t m_max_unacked_bytes;
 
     std::string m_error;
 

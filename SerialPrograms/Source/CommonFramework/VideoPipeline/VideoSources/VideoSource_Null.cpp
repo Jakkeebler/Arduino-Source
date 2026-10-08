@@ -26,7 +26,9 @@ JsonValue VideoSourceDescriptor_Null::to_json() const{
 
 std::unique_ptr<VideoSource> VideoSourceDescriptor_Null::make_VideoSource(
     Logger& logger,
-    Resolution resolution
+    Resolution resolution,
+    VideoFormat format,
+    FramesPerSecond fps
 ) const{
     return nullptr;
 }

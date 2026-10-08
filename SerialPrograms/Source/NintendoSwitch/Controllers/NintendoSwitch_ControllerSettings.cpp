@@ -160,7 +160,7 @@ const std::vector<JoyconColors>& OFFICIAL_JOYCON_COLORS0(){
         {"Let's Go! Pikachu and Eevee",                     0xC88C32, 0x281900, 0xFFDC00, 0x322800},
         {"Nintendo Labo Creators Contest Edition",          0xD7AA73, 0x1E1914, 0xD7AA73, 0x1E1914},
         {"Dragon Quest XI S Lotto Edition",                 0x1473FA, 0x00000F, 0x1473FA, 0x00000F},
-//        {"Disney Tsum Tsum Festival Edition",               0xB400E6, 0x140014, 0xFF3278, 0x28001E},
+        {"Disney Tsum Tsum Festival Edition",               0xB400E6, 0x140014, 0xFF3278, 0x28001E},
         {"Animal Crossing: New Horizons Edition",           0x82FF96, 0x0A1E0A, 0x96F5F5, 0x0A1E28},
         {"Fortnite Wildcat Edition",                        0xFFCC00, 0x1A1100, 0x0084FF, 0x000F1E},
         {"Mario Red x Blue Edition",                        0xF04614, 0x1E1914, 0xF04614, 0x1E1914},
@@ -175,15 +175,16 @@ const std::vector<JoyconColors>& OFFICIAL_JOYCON_COLORS0(){
 const std::vector<ProconColors>& OFFICIAL_PROCON_COLORS0(){
     //  From: https://gbatemp.net/threads/people-with-special-edition-pro-controllers-i-need-your-help-with-colors.627413/
     const static std::vector<ProconColors> database{
-        {"Procon: Stock Black",                 0x323232, 0x323232, 0x323232, 0xFFFFFF},    //  This is just a guess.
-        {"Procon: Super Smash Bros. Ultimate",  0xFFFFFF, 0xFFFFFF, 0x2D2D2D, 0xE6E6E6},
-        {"Procon: Monster Hunter Rise",         0x474646, 0x474646, 0x2E2D2D, 0xE7E6E6},
-        {"Procon: Monster Hunter Sunbreak",     0x464646, 0x464646, 0x2D2E2D, 0xE7E6E6},
-        {"Procon: Zelda Tears of the Kingdom",  0x464646, 0xFFFFFF, 0x2D2D2D, 0xE6E6E6},
-//        {"Procon: Xenoblade Chronicles 2",      0xFFFFFF, 0xFFFFFF, 0x323132, 0xFFFFFF},    //  The actual values. Switch automatically replaces grips with pink.
-        {"Procon: Xenoblade Chronicles 2",      0xff3a66, 0xff3a66, 0x323132, 0xFFFFFF},    //  Grip color is a guess.
-        {"Procon: Splatoon 2",                  0x1EDC00, 0xFF3278, 0x2D2D2D, 0xE6E6E6},    //  This is just a guess.
-        {"Procon: Splatoon 3",                  0x6455F5, 0xC3FA05, 0x2D2D2D, 0xE6E6E6},
+        {"Procon: Stock Black",                     0x323232, 0x323232, 0x323232, 0xFFFFFF},    //  This is just a guess.
+        {"Procon: Super Smash Bros. Ultimate",      0xFFFFFF, 0xFFFFFF, 0x2D2D2D, 0xE6E6E6},
+        {"Procon: Monster Hunter Rise",             0x474646, 0x474646, 0x2E2D2D, 0xE7E6E6},
+        {"Procon: Monster Hunter Sunbreak",         0x464646, 0x464646, 0x2D2E2D, 0xE7E6E6},
+        {"Procon: Zelda Tears of the Kingdom",      0x464646, 0xFFFFFF, 0x2D2D2D, 0xE6E6E6},
+//        {"Procon: Xenoblade Chronicles 2",          0xFFFFFF, 0xFFFFFF, 0x323132, 0xFFFFFF},    //  The actual values. Switch automatically replaces grips with pink.
+        {"Procon: Xenoblade Chronicles 2",          0xff3a66, 0xff3a66, 0x323132, 0xFFFFFF},    //  Grip color is a guess.
+        {"Procon: Splatoon 2",                      0x1EDC00, 0xFF3278, 0x2D2D2D, 0xE6E6E6},    //  This is just a guess.
+        {"Procon: Splatoon 3",                      0x6455F5, 0xC3FA05, 0x2D2D2D, 0xE6E6E6},
+        {"Procon: Splatoon Octopus (unofficial)",   0xFFFF00, 0xFFFF00, 0x5916AC, 0xE6E6E6},
     };
     return database;
 }
@@ -373,7 +374,7 @@ void ControllerSettingsRow::on_config_value_changed(void* object){
     }
 
 }
-void ControllerSettingsRow::on_press(){
+void ControllerSettingsRow::on_press(ButtonCell& button){
     set_profile(ControllerSettingsTable::random_profile(controller, nullptr));
 }
 
@@ -393,8 +394,7 @@ ControllerSettingsTable::ControllerSettingsTable()
         "Changing it will not actually change the MAC address of the device."
         "<br><br>"
         "Changes take effect after resetting the device.",
-        LockMode::UNLOCK_WHILE_RUNNING,
-        true
+        LockMode::UNLOCK_WHILE_RUNNING
     )
 {}
 std::vector<std::string> ControllerSettingsTable::make_header() const{
@@ -434,7 +434,7 @@ bool is_black(uint32_t x){
     uint8_t r = (uint8_t)(x >> 16);
     uint8_t g = (uint8_t)(x >>  8);
     uint8_t b = (uint8_t)(x >>  0);
-    return r < 0x10 && g < 0x10 && b < 0x10;
+    return r < 0x20 && g < 0x20 && b < 0x20;
 }
 
 
@@ -474,6 +474,7 @@ ControllerProfile ControllerSettingsTable::random_profile(
 
 //        cout << "name: " << profile.official_name << endl;
 
+        //  Apply random shuffles.
         if (seed & 0x80000000){
             profile.official_name.clear();
             std::swap(profile.body_color, profile.button_color);

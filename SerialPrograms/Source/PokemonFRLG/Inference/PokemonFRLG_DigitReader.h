@@ -7,10 +7,15 @@
  *  then template-matches each cropped digit against the pre-stored digit
  *  templates (Resources/PokemonFRLG/Digits/0-9.png) on the unblurred original.
  *
- *  This is the Tesseract/PaddleOCR-free fallback path for USE_PADDLE_OCR=false.
+ *  This is the Tesseract (PaddleOCR-free) fallback path.
  */
 
 #ifndef PokemonAutomation_PokemonFRLG_DigitReader_H
+//  The matching #define was missing, so this include guard never actually
+//  engaged: a second include in the same translation unit would redeclare
+//  everything below.
+#define PokemonAutomation_PokemonFRLG_DigitReader_H
+
 #include <cstdint>
 #include <string>
 
@@ -18,6 +23,7 @@ namespace PokemonAutomation{
 
 class Logger;
 class ImageViewRGB32;
+class ImageRGB32;   //  preprocess_for_ocr returns one by value.
 
 namespace NintendoSwitch{
 namespace PokemonFRLG{

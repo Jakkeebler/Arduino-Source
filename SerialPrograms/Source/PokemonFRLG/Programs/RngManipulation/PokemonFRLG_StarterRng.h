@@ -10,6 +10,7 @@
 #include "Common/Cpp/Options/SimpleIntegerOption.h"
 #include "Common/Cpp/Options/FloatingPointOption.h"
 #include "Common/Cpp/Options/BooleanCheckBoxOption.h"
+#include "Common/Cpp/Options/StaticTextOption.h"
 #include "Common/Cpp/Options/TextEditOption.h"
 #include "CommonFramework/Notifications/EventNotificationsTable.h"
 #include "CommonTools/Options/LanguageOCROption.h"
@@ -19,6 +20,7 @@
 #include "Pokemon/Pokemon_AdvRng.h"
 #include "PokemonFRLG_RngCalibration.h"
 #include "PokemonFRLG_RngDisplays.h"
+#include "PokemonFRLG_SeedsDatabase.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -47,9 +49,10 @@ private:
         charmander
     };
 
-    bool have_hit_target(SingleSwitchProgramEnvironment& env, const uint32_t& TARGET_SEED, const AdvRngState& hit);
-
-    AdvObservedPokemon read_summary(SingleSwitchProgramEnvironment& env, ProControllerContext& context);
+    enum class GameVersion{
+        firered,
+        leafgreen
+    };
 
     bool walk_to_rival_battle(SingleSwitchProgramEnvironment& env, ProControllerContext& context);
     bool auto_battle_rival(
@@ -70,27 +73,25 @@ private:
         const BaseStats& BASE_STATS
     );
 
-    
-    OCR::LanguageOCROption LANGUAGE;
-
-    EnumDropdownOption<Starter> STARTER;
-
-    SimpleIntegerOption<uint64_t> MAX_RESETS;
-
+    SectionDividerOption m_calibration_displays;
+    RngTargetDisplay RNG_TARGET;
     RngFilterDisplay RNG_FILTERS;
     RngCalibrationDisplay RNG_CALIBRATION;
 
-    StringOption SEED; 
-    TextEditOption SEED_LIST;
-    EnumDropdownOption<SeedButton> SEED_BUTTON;
-    EnumDropdownOption<BlackoutButton> EXTRA_BUTTON;
-    SimpleIntegerOption<uint64_t> SEED_DELAY;
+    SectionDividerOption m_game_info;
+    EnumDropdownOption<GameVersion> GAME_VERSION;
+    OCR::LanguageOCROption LANGUAGE;
+    EnumDropdownOption<SoundSetting> SOUND;
 
+    SectionDividerOption m_target_settings;
+    EnumDropdownOption<Starter> STARTER;
+    StringOption SEED;
     SimpleIntegerOption<uint64_t>ADVANCES;
-    // SimpleIntegerOption<uint64_t>CONTINUE_SCREEN_FRAMES;
 
+    SectionDividerOption m_program_settings;
+    SimpleIntegerOption<uint16_t> SEED_RADIUS;
+    SimpleIntegerOption<uint64_t> MAX_RESETS;
     BooleanCheckBoxOption IGNORE_WILD_SHINIES;
-
     SimpleIntegerOption<uint8_t> PROFILE;
 
     BooleanCheckBoxOption TAKE_VIDEO;

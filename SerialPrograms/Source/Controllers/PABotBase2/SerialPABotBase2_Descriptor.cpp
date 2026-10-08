@@ -4,7 +4,6 @@
  *
  */
 
-#include <QSerialPortInfo>
 #include <QWidget>
 #include "Common/Cpp/Json/JsonValue.h"
 #include "Controllers/ControllerTypeStrings.h"
@@ -55,22 +54,19 @@ JsonValue SerialPABotBase2_Descriptor::to_json() const{
     return m_name;
 }
 
-std::unique_ptr<ControllerConnection> SerialPABotBase2_Descriptor::open_connection(
-    Logger& logger,
-    bool set_to_null_controller
-) const{
+std::unique_ptr<ControllerConnection> SerialPABotBase2_Descriptor::open_connection(Logger& logger) const{
+    SerialPortPoller::instance().begin_refresh_now();
     if (m_name.empty()){
         return nullptr;
     }
     return std::unique_ptr<ControllerConnection>(
-        new SerialPABotBase2_Connection(logger, m_name, set_to_null_controller)
+        new SerialPABotBase2_Connection(logger, m_name)
     );
 }
 std::unique_ptr<AbstractController> SerialPABotBase2_Descriptor::make_controller(
     Logger& logger,
     ControllerConnection& connection,
-    ControllerType controller_type,
-    ControllerResetMode reset_mode
+    ControllerType controller_type
 ) const{
     switch (controller_type){
     case ControllerType::HID_Keyboard:
