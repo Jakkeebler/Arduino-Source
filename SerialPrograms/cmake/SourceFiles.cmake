@@ -1594,6 +1594,8 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/Farming/PokemonFRLG_EvTrainer.h
     Source/PokemonFRLG/Programs/PokemonFRLG_KantoMapNavigator.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_KantoMapNavigator.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStoryTools.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStoryTools.h
     Source/PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.h
     Source/PokemonFRLG/Programs/PokemonFRLG_RoutePaths.cpp
