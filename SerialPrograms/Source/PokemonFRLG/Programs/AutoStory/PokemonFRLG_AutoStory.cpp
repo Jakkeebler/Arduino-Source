@@ -10,6 +10,12 @@
 #include "Pokemon/Pokemon_Strings.h"
 #include "Pokemon/Inference/Pokemon_NameReader.h"
 #include "PokemonFRLG_AutoStory.h"
+#include "PokemonFRLG_AutoStory_Segment_B0_00.h"
+#include "PokemonFRLG_AutoStory_Segment_B0_01.h"
+#include "PokemonFRLG_AutoStory_Segment_B0_02.h"
+#include "PokemonFRLG_AutoStory_Segment_B0_03.h"
+#include "PokemonFRLG_AutoStory_Segment_B0_04.h"
+#include "PokemonFRLG_AutoStory_Segment_B0_05.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -90,6 +96,38 @@ private:
     std::string m_end_text;
 };
 
+//  Real implementation of Phase::B0, chaining the six B0_NN sub-segments
+//  (new game -> Oak intro -> starter -> rival battle 1 -> Viridian PC heal
+//  -> Route 1 -> Viridian Forest exit). Each sub-segment is implemented in
+//  its own PokemonFRLG_AutoStory_Segment_B0_NN.h/.cpp file; see those files
+//  for the per-step start/end state and known caveats (several steps here
+//  are first-pass/not hardware-verified -- see each file's header comment).
+class AutoStory_Segment_B0 : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B0);
+    }
+    virtual std::string start_text() const override{
+        return "Standing in the player's bedroom on a brand new save.";
+    }
+    virtual std::string end_text() const override{
+        return "Just exited Viridian Forest onto Route 2, heading for Pewter City.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B0_00_new_game_oak_intro(env, context, options, stats);
+        run_B0_01_starter_selection(env, context, options, stats);
+        run_B0_02_rival_battle_1(env, context, options, stats);
+        run_B0_03_viridian_pc_heal(env, context, options, stats);
+        run_B0_04_route1_viridian_forest(env, context, options, stats);
+        run_B0_05_viridian_forest_exit(env, context, options, stats);
+    }
+};
+
 }  //  anonymous namespace
 
 
@@ -100,7 +138,7 @@ const std::vector<std::unique_ptr<AutoStory_Segment>>& ALL_AUTO_STORY_SEGMENT_LI
             ret.emplace_back(std::make_unique<AutoStory_Segment_Stub>(phase, start_text, end_text));
         };
 
-        add(Phase::B0,  "Standing in the player's bedroom on a brand new save.",                    "Just exited Viridian Forest onto Route 2, heading for Pewter City.");
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B0>());
         add(Phase::B1a, "On Route 2, just north of Viridian Forest's north exit.",                   "Standing in front of the Pewter Gym door.");
         add(Phase::B1b, "Standing in front of the Pewter Gym door, about to enter.",                 "Boulder Badge won. Outside the Pewter Gym.");
         add(Phase::B2a, "Outside the Pewter Gym, Boulder Badge in hand.",                            "Standing at the entrance to Mt. Moon.");
