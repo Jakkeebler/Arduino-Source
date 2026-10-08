@@ -1596,6 +1596,12 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/PokemonFRLG_KantoMapNavigator.h
     Source/PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.h
+    Source/PokemonFRLG/Programs/PokemonFRLG_WalkingDriftGuard.cpp
+    Source/PokemonFRLG/Programs/PokemonFRLG_WalkingDriftGuard.h
+    Source/PokemonFRLG/Programs/PokemonFRLG_TravelDecisionTable.cpp
+    Source/PokemonFRLG/Programs/PokemonFRLG_TravelDecisionTable.h
+    Source/PokemonFRLG/Programs/PokemonFRLG_MenuConfirmGuard.cpp
+    Source/PokemonFRLG/Programs/PokemonFRLG_MenuConfirmGuard.h
     Source/PokemonFRLG/Programs/PokemonFRLG_RoutePaths.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_RoutePaths.h
     Source/PokemonFRLG/Programs/PokemonFRLG_SafariOptimalAction.cpp

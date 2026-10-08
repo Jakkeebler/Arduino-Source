@@ -21,6 +21,9 @@
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnStateMachine.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MovePlan.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_WalkingDriftGuard.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_TravelDecisionTable.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_MenuConfirmGuard.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_Evolutions.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_Learnsets.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_MoveData.h"
@@ -378,6 +381,188 @@ int test_pokemonFRLG_MoveLearnDecider(const std::string& test_file_path){
         test_scenario_evolution,
     }){
         result = scenario();
+        if (result != 0){
+            return result;
+        }
+    }
+    return 0;
+}
+
+
+//  ---- FRO-225 Phase 2: walking drift, collision, travel decision, menu confirm ----
+//
+//  Registered as "PokemonFRLG_WalkingAndTravelLogic". Pure logic, no image/file
+//  data needed, so the test always runs regardless of what file (if any) is
+//  dropped in its Tests/ folder.
+
+namespace{
+
+int test_drift_guard(){
+    //  Exact match: no drift, no re-localize.
+    {
+        DriftCheckResult r = check_walk_drift(10, 10, 10, 10, false);
+        TEST_RESULT_EQUAL(r.drift_tiles, 0);
+        TEST_RESULT_EQUAL(r.should_relocalize, false);
+    }
+    //  1-tile drift in either axis must re-localize immediately -- this is
+    //  the acceptance criteria's "within 1 tile of actual drift", not after
+    //  waiting for the strand guard to trip on repeated non-movement.
+    {
+        DriftCheckResult r = check_walk_drift(10, 10, 11, 10, false);
+        TEST_RESULT_EQUAL(r.drift_tiles, 1);
+        TEST_RESULT_EQUAL(r.should_relocalize, true);
+    }
+    {
+        DriftCheckResult r = check_walk_drift(10, 10, 10, 9, false);
+        TEST_RESULT_EQUAL(r.drift_tiles, 1);
+        TEST_RESULT_EQUAL(r.should_relocalize, true);
+    }
+    //  Diagonal drift reports Chebyshev distance, not Manhattan.
+    {
+        DriftCheckResult r = check_walk_drift(10, 10, 13, 14, false);
+        TEST_RESULT_EQUAL(r.drift_tiles, 4);
+        TEST_RESULT_EQUAL(r.should_relocalize, true);
+    }
+    //  An interrupted step (encounter/fade) never targeted the predicted
+    //  tile in the first place: must not be reported as drift.
+    {
+        DriftCheckResult r = check_walk_drift(10, 10, 7, 10, true);
+        TEST_RESULT_EQUAL(r.drift_tiles, 0);
+        TEST_RESULT_EQUAL(r.should_relocalize, false);
+    }
+    //  drift_check_due: interval <= 1 means "always due".
+    TEST_RESULT_EQUAL(drift_check_due(0, 1), true);
+    TEST_RESULT_EQUAL(drift_check_due(0, 0), true);
+    TEST_RESULT_EQUAL(drift_check_due(3, 4), false);
+    TEST_RESULT_EQUAL(drift_check_due(4, 4), true);
+    return 0;
+}
+
+int test_collision_guard(){
+    //  Reroutes within 2 unexplained stalls (the acceptance criteria), and
+    //  resets cleanly once movement resumes.
+    CollisionGuard guard(2);
+    TEST_RESULT_EQUAL((int)guard.report(true, false), (int)CollisionDecision::NotACollision);
+    TEST_RESULT_EQUAL(guard.consecutive_unexplained_stalls(), 0);
+    TEST_RESULT_EQUAL((int)guard.report(false, true), (int)CollisionDecision::NotACollision);   //  expected non-move (turn)
+    TEST_RESULT_EQUAL(guard.consecutive_unexplained_stalls(), 0);
+    TEST_RESULT_EQUAL((int)guard.report(false, false), (int)CollisionDecision::KeepTrying);     //  1st unexplained stall
+    TEST_RESULT_EQUAL((int)guard.report(false, false), (int)CollisionDecision::Reroute);        //  2nd: threshold reached
+    guard.reset();
+    TEST_RESULT_EQUAL(guard.consecutive_unexplained_stalls(), 0);
+    //  A legitimate movement in between resets the streak, so the next
+    //  stall only counts as the 1st again.
+    TEST_RESULT_EQUAL((int)guard.report(false, false), (int)CollisionDecision::KeepTrying);
+    TEST_RESULT_EQUAL((int)guard.report(true, false), (int)CollisionDecision::NotACollision);
+    TEST_RESULT_EQUAL((int)guard.report(false, false), (int)CollisionDecision::KeepTrying);
+    return 0;
+}
+
+int test_travel_decision_table(){
+    //  Branch 1: Fly available and sufficiently charged wins outright, even
+    //  when Teleport would also apply.
+    {
+        TravelOptions o;
+        o.fly_spot_unlocked = true;
+        o.fly_user_pp = 3;
+        o.fly_pp_required = 1;
+        o.teleport_available = true;
+        o.destination_is_last_visited_pokecenter = true;
+        TEST_RESULT_EQUAL((int)choose_travel_method(o), (int)TravelMethod::Fly);
+    }
+    //  Fly locked out (not enough PP) falls through to Teleport, but only
+    //  when the destination actually IS the last-visited Pokemon Center.
+    {
+        TravelOptions o;
+        o.fly_spot_unlocked = true;
+        o.fly_user_pp = 0;
+        o.fly_pp_required = 1;
+        o.teleport_available = true;
+        o.destination_is_last_visited_pokecenter = true;
+        TEST_RESULT_EQUAL((int)choose_travel_method(o), (int)TravelMethod::Teleport);
+    }
+    //  Teleport "available" but destination is NOT the last-visited PC: it
+    //  would land in the wrong place, so this must fall through to walking,
+    //  not be treated as usable for this trip.
+    {
+        TravelOptions o;
+        o.teleport_available = true;
+        o.destination_is_last_visited_pokecenter = false;
+        TEST_RESULT_EQUAL((int)choose_travel_method(o), (int)TravelMethod::Walk);
+    }
+    //  Walk-only: neither Fly nor Teleport apply.
+    {
+        TravelOptions o;
+        TEST_RESULT_EQUAL((int)choose_travel_method(o), (int)TravelMethod::Walk);
+    }
+    //  Explicit Dig escape pre-empts the whole chain, even when Fly is also
+    //  fully available -- Dig must never be chosen implicitly otherwise.
+    {
+        TravelOptions o;
+        o.fly_spot_unlocked = true;
+        o.fly_user_pp = 5;
+        o.fly_pp_required = 1;
+        o.dig_explicit_escape_requested = true;
+        TEST_RESULT_EQUAL((int)choose_travel_method(o), (int)TravelMethod::Dig);
+    }
+    {
+        TravelOptions o;
+        TEST_RESULT_EQUAL(std::string(travel_method_name(TravelMethod::Fly)), std::string("Fly"));
+        TEST_RESULT_EQUAL(std::string(travel_method_name(TravelMethod::Teleport)), std::string("Teleport"));
+        TEST_RESULT_EQUAL(std::string(travel_method_name(TravelMethod::Walk)), std::string("Walk"));
+        TEST_RESULT_EQUAL(std::string(travel_method_name(TravelMethod::Dig)), std::string("Dig"));
+    }
+    return 0;
+}
+
+int test_menu_confirm_guard(){
+    using Outcome = MenuConfirmGuard::Outcome;
+    using Step = MenuConfirmGuard::Step;
+
+    //  A clean read-back confirms immediately.
+    {
+        MenuConfirmGuard guard(3);
+        TEST_RESULT_EQUAL((int)guard.report(Outcome::Verified), (int)Step::Confirm);
+    }
+    //  Mismatch retries, not confirms -- an unverified selection must never
+    //  silently proceed.
+    {
+        MenuConfirmGuard guard(3);
+        TEST_RESULT_EQUAL((int)guard.report(Outcome::Mismatch), (int)Step::Retry);
+        TEST_RESULT_EQUAL(guard.attempts(), 1);
+        TEST_RESULT_EQUAL((int)guard.report(Outcome::Unreadable), (int)Step::Retry);
+        TEST_RESULT_EQUAL(guard.attempts(), 2);
+        //  Budget exhausted on the 3rd bad attempt.
+        TEST_RESULT_EQUAL((int)guard.report(Outcome::Mismatch), (int)Step::GiveUp);
+    }
+    //  A late success still confirms (no sticky failure state).
+    {
+        MenuConfirmGuard guard(3);
+        guard.report(Outcome::Mismatch);
+        TEST_RESULT_EQUAL((int)guard.report(Outcome::Verified), (int)Step::Confirm);
+    }
+    //  reset() clears the attempt count.
+    {
+        MenuConfirmGuard guard(2);
+        guard.report(Outcome::Mismatch);
+        guard.reset();
+        TEST_RESULT_EQUAL(guard.attempts(), 0);
+        TEST_RESULT_EQUAL((int)guard.report(Outcome::Mismatch), (int)Step::Retry);
+    }
+    return 0;
+}
+
+}  //  namespace
+
+int test_pokemonFRLG_WalkingAndTravelLogic(const std::string& test_file_path){
+    (void)test_file_path;
+    for (int (*scenario)() : {
+        test_drift_guard,
+        test_collision_guard,
+        test_travel_decision_table,
+        test_menu_confirm_guard,
+    }){
+        int result = scenario();
         if (result != 0){
             return result;
         }

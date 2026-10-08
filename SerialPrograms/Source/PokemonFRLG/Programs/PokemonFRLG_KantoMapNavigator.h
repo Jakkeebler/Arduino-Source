@@ -11,6 +11,7 @@
 #define PokemonAutomation_PokemonFRLG_KantoMapNavigator_H
 
 #include "NintendoSwitch/NintendoSwitch_SingleSwitchProgram.h"
+#include "CommonFramework/ImageTypes/ImageViewRGB32.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -114,6 +115,20 @@ void kanto_navigate_to(
     const KantoGoal& goal,
     const KantoGoal& start_hint,
     int max_steps = 200
+);
+
+//  Locate the player on the combined Kanto map. Returns false if the best
+//  match score is below min_confidence. Thin wrapper around
+//  Inference/Map/PokemonFRLG_KantoMapDetector.h's KantoMapDetector singleton
+//  so callers (e.g. PokemonFRLG_Navigation.cpp, verifying Fly arrival) don't
+//  need to include that header directly -- its KantoMapDetector class name
+//  collides with the unrelated screen-detector of the same name declared in
+//  Inference/Map/PokemonFRLG_MapDetector.h, and the two headers cannot be
+//  included together in the same translation unit.
+bool kanto_locate_player(
+    const ImageViewRGB32& screen,
+    double min_confidence,
+    int& out_tile_x, int& out_tile_y
 );
 
 

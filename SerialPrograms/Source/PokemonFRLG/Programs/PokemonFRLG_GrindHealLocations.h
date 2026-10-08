@@ -89,6 +89,14 @@ const KantoGoal& pc_entrance_for_heal_location(HealLocationId id);
 //  The Fly map destination for this PC. Used by Travel Method = Fly.
 KantoFlyLocation fly_for_heal_location(HealLocationId id);
 
+//  Reverse of fly_for_heal_location(): which heal location (if any) a given
+//  Fly destination lands you next to, used by fly_from_kanto_map() to verify
+//  arrival after a Fly (FRO-225). Returns false for Fly destinations with no
+//  PC to check against (Pallet Town has none; Indigo Plateau's is not
+//  navigable the same way -- see HealLocationId's comment above), in which
+//  case the caller must skip verification rather than guess.
+bool heal_location_for_fly_location(KantoFlyLocation fly_destination, HealLocationId& out);
+
 //  The Pokemon Center closest to a grind spot, used as the default heal
 //  target so the user only has to pick where to grind. "Closest" is by
 //  straight-line tile distance, not walking distance.

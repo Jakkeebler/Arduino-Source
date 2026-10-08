@@ -23,6 +23,7 @@
 #include "PokemonFRLG/Inference/Map/PokemonFRLG_KantoMapPathfinder.h"
 #include "PokemonFRLG/PokemonFRLG_Navigation.h"
 #include "PokemonFRLG_KantoMapNavigator.h"
+#include "PokemonFRLG_WalkingDriftGuard.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -109,8 +110,20 @@ constexpr int MAX_BLOCKED_START_ESCAPES = 4;
 //  Consecutive no-progress polls before we conclude the tile ahead is genuinely
 //  not walkable and record it. Well under MAX_NO_PROGRESS on purpose: the point
 //  is to re-route while there is still budget left to walk the alternative.
-//  Three presses is already past any plausible dropped input.
-constexpr int NO_PROGRESS_BEFORE_LEARNING = 3;
+//
+//  FRO-225: tightened 3 -> 2 per the Phase 2 acceptance criteria ("collision
+//  detection ... reroutes within 2 attempts"). Matches CollisionGuard's
+//  default threshold in PokemonFRLG_WalkingDriftGuard.h, which is the
+//  unit-tested pure-logic form of this same policy.
+constexpr int NO_PROGRESS_BEFORE_LEARNING = 2;
+
+//  FRO-225 drift check: how often (in confirmed position fixes) to compare
+//  the predicted landing tile against the actual one. 1 means every single
+//  fix -- the existing per-poll motion gate only rejects implausible jumps
+//  outright, it does not flag a plausible-but-wrong 1-tile drift at all, so
+//  checking anything less often than every fix would miss exactly the case
+//  this guard exists for.
+constexpr int DRIFT_CHECK_INTERVAL_STEPS = 1;
 
 //  Cap on obstacles one navigation may learn. A handful means the mask is wrong
 //  about a wall or two and routing around them is right. Many more means we are
@@ -245,6 +258,16 @@ static void kanto_navigate_impl(
     bool have_prev_pos = false;
     int prev_x = -999, prev_y = -999;
     Step last_step = STEP_NORTH;
+
+    //  FRO-225 drift check: where the burst we just issued should have ended
+    //  if every tile of it actually landed, set right before the step is
+    //  issued and compared against the next confirmed fix. have_predicted is
+    //  false until the first burst has been issued, and is cleared whenever
+    //  the hint chain is dropped (a cold re-localize invalidates any
+    //  prediction that was anchored to the old belief).
+    bool have_predicted = false;
+    int predicted_x = -999, predicted_y = -999;
+    int drift_steps_since_check = 0;
 
     //  Seed the search window from the caller's belief about where we are.
     //
@@ -493,6 +516,7 @@ static void kanto_navigate_impl(
                 pos.reset();
                 if (go_cold){
                     have_prev_pos = false;
+                    have_predicted = false;
                     rejected_jumps = 0;
                 }
                 unknown_polls++;
@@ -582,6 +606,7 @@ static void kanto_navigate_impl(
                     COLOR_YELLOW
                 );
                 have_prev_pos = false;
+                have_predicted = false;
                 seeded_hint_unconfirmed = false;
                 void_reported = false;
             }
@@ -625,9 +650,59 @@ static void kanto_navigate_impl(
         }
 
         //  No-progress detection: same tile two polls in a row means we hit
-        //  an obstacle the path doesn't account for.
+        //  an obstacle the path doesn't account for. Computed here (ahead of
+        //  its own section below) so the drift check above it can skip this
+        //  case -- see the comment above exact_no_move's use.
         bool didnt_move = have_prev_pos &&
                           pos->tile_x == prev_x && pos->tile_y == prev_y;
+
+        //  FRO-225 drift check: compare the predicted landing tile against
+        //  this confirmed fix BEFORE the no-progress path runs. A burst that
+        //  moved the player but not as far/where predicted never shows up as
+        //  "no movement" -- the old no-progress counter could never catch it,
+        //  it would only ever get flagged (wrongly) as a map/obstacle issue
+        //  several steps later once the strand guard noticed total stall. An
+        //  expected non-movement (turn-in-place or interrupted step) is not
+        //  drift: the predicted tile was never really targeted in that case.
+        //
+        //  Deliberately excluded: landing on the EXACT same tile as the last
+        //  confirmed fix (didnt_move). That is the no-progress/obstacle case
+        //  (item 2 of FRO-225, handled below by its own cold-recheck-before-
+        //  blaming-the-map logic) -- if this block also reacted to it, the
+        //  two guards would fight: this would re-localize and `continue`
+        //  every single poll before the no-progress counter ever got a
+        //  chance to increment, learn the obstacle, and reroute, recreating
+        //  the exact infinite-bump loop FRO-225 exists to fix.
+        if (have_predicted && !didnt_move &&
+            drift_check_due(drift_steps_since_check, DRIFT_CHECK_INTERVAL_STEPS)){
+            drift_steps_since_check = 0;
+            DriftCheckResult drift = check_walk_drift(
+                predicted_x, predicted_y,
+                pos->tile_x, pos->tile_y,
+                prev_step_interrupted || prev_step_was_turn
+            );
+            if (drift.should_relocalize){
+                env.log(
+                    "Drift detected: predicted (" + std::to_string(predicted_x) + "," +
+                        std::to_string(predicted_y) + ") vs actual (" +
+                        std::to_string(pos->tile_x) + "," + std::to_string(pos->tile_y) +
+                        "), " + std::to_string(drift.drift_tiles) +
+                        " tile(s) off. Re-localizing immediately instead of waiting "
+                        "for the strand guard.",
+                    COLOR_YELLOW
+                );
+                have_prev_pos = false;
+                have_predicted = false;
+                hint_x = -999;
+                hint_y = -999;
+                hint_radius = HINT_RADIUS_TILES;
+                tiles_in_flight = 1;
+                rejected_jumps = 0;
+                context.wait_for(std::chrono::milliseconds(150));
+                continue;
+            }
+        }
+
         if (didnt_move && (prev_step_was_turn || prev_step_interrupted)){
             //  Expected non-movement: either the previous press only turned the
             //  player to face a new direction, or the step was interrupted by an
@@ -679,6 +754,7 @@ static void kanto_navigate_impl(
                     COLOR_YELLOW
                 );
                 have_prev_pos = false;
+                have_predicted = false;
                 hint_x = -999;
                 hint_y = -999;
                 hint_radius = HINT_RADIUS_TILES;
@@ -734,6 +810,7 @@ static void kanto_navigate_impl(
                     //  (40,204) at conf 0.987 for every poll after it, because
                     //  every one of those fixes was still hinted at (40,204).
                     have_prev_pos = false;
+                    have_predicted = false;
                     hint_x = -999;
                     hint_y = -999;
                     hint_radius = HINT_RADIUS_TILES;
@@ -946,6 +1023,7 @@ static void kanto_navigate_impl(
                 );
                 env.log(buf, COLOR_YELLOW);
                 have_prev_pos = false;
+                have_predicted = false;
                 unknown_polls++;
                 if (unknown_polls > MAX_UNKNOWN_POLLS){
                     OperationFailedException::fire(
@@ -1120,6 +1198,15 @@ static void kanto_navigate_impl(
             run_len = 1;
         }
 
+        //  FRO-225 drift check: record the predicted landing tile for this
+        //  burst now, before it is issued, so the next confirmed fix can be
+        //  compared against it. jx/jy are already tile-unit deltas (see the
+        //  Step constants above), so no direction table lookup is needed.
+        predicted_x = pos->tile_x + static_cast<int>(last_step.jx) * run_len;
+        predicted_y = pos->tile_y + static_cast<int>(last_step.jy) * run_len;
+        have_predicted = true;
+        drift_steps_since_check++;
+
         const char* region = kanto_region_name(kanto_region_at(pos->tile_x, pos->tile_y));
         char log_buf[220];
         std::snprintf(
@@ -1273,6 +1360,21 @@ static void kanto_navigate_impl(
             ") exhausted in kanto_navigate_to without reaching goal.",
         env.console
     );
+}
+
+
+bool kanto_locate_player(
+    const ImageViewRGB32& screen,
+    double min_confidence,
+    int& out_tile_x, int& out_tile_y
+){
+    std::optional<KantoPosition> pos = KantoMapDetector::instance().locate(screen, min_confidence);
+    if (!pos){
+        return false;
+    }
+    out_tile_x = pos->tile_x;
+    out_tile_y = pos->tile_y;
+    return true;
 }
 
 

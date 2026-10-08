@@ -25,6 +25,14 @@ namespace PokemonFRLG{
 using namespace std::chrono_literals;
 
 
+//  Defined in Programs/PokemonFRLG_GrindHealLocations.h, which itself
+//  includes this header (for KantoFlyLocation) -- forward-declare here
+//  rather than include it back, to avoid a header cycle. HealLocationId has
+//  no explicit underlying type in its real definition, so plain `int` (the
+//  enum class default) matches.
+enum class HealLocationId;
+
+
 enum class BattleResult{
     opponentfainted,
     playerfainted,
@@ -168,10 +176,22 @@ void use_sweet_scent_from_overworld(ConsoleHandle& console, ProControllerContext
 // Assumes that Teleport is usable and the last party member has it learned
 void use_teleport_from_overworld(ConsoleHandle& console, ProControllerContext& context);
 
+//  Same, but also verifies arrival at `expected_destination`'s PC afterward
+//  (Teleport always returns to the last-visited Pokemon Center, so the
+//  caller -- e.g. the travel decision table, which already knows
+//  destination_is_last_visited_pokecenter -- supplies which PC that is).
+//  Retries the whole Teleport attempt (bounded) if arrival can't be
+//  confirmed near that PC, same FRO-225 read-verify-before-confirm pattern
+//  as fly_from_kanto_map().
+void use_teleport_from_overworld(ConsoleHandle& console, ProControllerContext& context, HealLocationId expected_destination);
+
 // Navigates to the fly map. Assumes that Fly is usable and the last member of your party has it learned
 void open_fly_map_from_overworld(ConsoleHandle& console, ProControllerContext& context);
 
-// Starting from the Kanto Fly map, fly to a specified location.
+// Starting from the Kanto Fly map, fly to a specified location. Verifies
+// arrival against the destination's PC (where one exists, see
+// heal_location_for_fly_location()) before returning, and retries the whole
+// attempt if the cursor landed on the wrong city (FRO-225).
 void fly_from_kanto_map(ConsoleHandle& console, ProControllerContext& context, KantoFlyLocation destination);
 
 // Enter a PokeCenter. Assumes the player is standing in front of its door

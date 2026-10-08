@@ -104,6 +104,28 @@ KantoFlyLocation fly_for_heal_location(HealLocationId id){
     }
     throw InternalProgramError(nullptr, PA_CURRENT_FUNCTION, "Unknown HealLocationId.");
 }
+bool heal_location_for_fly_location(KantoFlyLocation fly_destination, HealLocationId& out){
+    //  Pallet Town and Indigo Plateau have no entry in HealLocationId (see its
+    //  comment in the header) -- no PC exists to verify against, so report
+    //  "no mapping" rather than guessing.
+    switch (fly_destination){
+    case KantoFlyLocation::viridiancity:   out = HealLocationId::ViridianCity;   return true;
+    case KantoFlyLocation::pewtercity:     out = HealLocationId::PewterCity;     return true;
+    case KantoFlyLocation::route4:         out = HealLocationId::Route4;         return true;
+    case KantoFlyLocation::ceruleancity:   out = HealLocationId::CeruleanCity;   return true;
+    case KantoFlyLocation::route10:        out = HealLocationId::Route10;        return true;
+    case KantoFlyLocation::celadoncity:    out = HealLocationId::CeladonCity;    return true;
+    case KantoFlyLocation::lavendertown:   out = HealLocationId::LavenderTown;   return true;
+    case KantoFlyLocation::saffroncity:    out = HealLocationId::SaffronCity;    return true;
+    case KantoFlyLocation::vermilioncity:  out = HealLocationId::VermilionCity;  return true;
+    case KantoFlyLocation::fuschiacity:    out = HealLocationId::FuchsiaCity;    return true;
+    case KantoFlyLocation::cinnabarisland: out = HealLocationId::CinnabarIsland; return true;
+    case KantoFlyLocation::pallettown:
+    case KantoFlyLocation::indigoplateau:
+        return false;
+    }
+    return false;
+}
 
 HealLocationId nearest_heal_location(GrindLocationId id){
     //  Hand-assigned rather than computed: straight-line distance picks the
