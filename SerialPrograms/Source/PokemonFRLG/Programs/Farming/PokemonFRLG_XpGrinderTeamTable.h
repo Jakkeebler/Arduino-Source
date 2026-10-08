@@ -26,6 +26,7 @@
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_EvolutionPolicy.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MovePlan.h"
+#include "PokemonFRLG/Programs/Farming/PokemonFRLG_TrainingGoal.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -63,6 +64,11 @@ public:
     EnumDropdownCell<EvolutionPolicyType> evolution_policy;
     EnumDropdownCell<EvolutionStoneItem> evolution_stone;
 
+    //  FRO-235: named per-Pokemon stop condition, surfaced explicitly instead
+    //  of only being inferable from MAX_BATTLES/STOP_WHEN_TEAM_COMPLETE/
+    //  evolution_policy/MovePlan::target_level().
+    EnumDropdownCell<TrainingGoalType> training_goal;
+
 private:
     //  Rebuild chain_move_db's contents based on `species_slug`. Saves and
     //  restores each move cell's selected slug across the swap (drops to
@@ -87,6 +93,9 @@ public:
     //  FRO-226.
     EvolutionPolicyType        evolution_policy_for(size_t pokemon) const;
     EvolutionStoneItem         evolution_stone_for(size_t pokemon) const;
+
+    //  FRO-235.
+    TrainingGoalType           training_goal_for(size_t pokemon) const;
 
     //  Auto-update a row's species cell. Used by the party scanner after
     //  detecting a new dex# (initial scan or post-evolution rescan). Returns

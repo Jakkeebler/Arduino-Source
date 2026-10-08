@@ -1523,6 +1523,16 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                                 .field("species", TEAM_TABLE.species_for(rot))
                                 .field("level", (long long)party.level[rot])
                                 .field("target_level", (long long)party.plan[rot].target_level())
+                                .field("training_goal", [&]{
+                                    const EnumEntry* e = TrainingGoalType_Database().find(TEAM_TABLE.training_goal_for(rot));
+                                    return e != nullptr ? e->slug : std::string("unknown");
+                                }())
+                                .field("training_goal_satisfied", training_goal_satisfied(
+                                    TEAM_TABLE.training_goal_for(rot),
+                                    party.plan[rot],
+                                    party.level[rot],
+                                    /*evolved_this_run=*/false
+                                ))
                                 .outcome(party.plan[rot].complete() ? "goal_complete" : "goal_pending")
                                 .to_line(),
                             COLOR_BLUE

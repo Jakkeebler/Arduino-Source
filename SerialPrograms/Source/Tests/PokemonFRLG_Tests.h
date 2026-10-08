@@ -41,6 +41,9 @@ int test_pokemonFRLG_MoveLearnDecider(const std::string& test_file_path);
 //  Logic-only: ignores the file contents. See the comment in PokemonFRLG_Tests.cpp.
 int test_pokemonFRLG_EvolutionPolicy(const std::string& test_file_path);
 
+//  Logic-only: ignores the file contents. See the comment in PokemonFRLG_Tests.cpp.
+int test_pokemonFRLG_TrainingGoal(const std::string& test_file_path);
+
 }
 
 #endif

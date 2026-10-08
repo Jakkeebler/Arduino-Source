@@ -116,6 +116,7 @@ XpGrinderTeamRow::XpGrinderTeamRow(EditableTableOption& parent_table)
     , on_unknown(OnUnknownOffered_Database(), LockMode::LOCK_WHILE_RUNNING, OnUnknownOffered::Decline)
     , evolution_policy(EvolutionPolicyType_Database(), LockMode::LOCK_WHILE_RUNNING, EvolutionPolicyType::LevelUp)
     , evolution_stone(EvolutionStoneItem_Database(), LockMode::LOCK_WHILE_RUNNING, EvolutionStoneItem::None)
+    , training_goal(TrainingGoalType_Database(), LockMode::LOCK_WHILE_RUNNING, TrainingGoalType::Indefinite)
 {
     PA_ADD_OPTION(species);
     PA_ADD_OPTION(desired_move[0]);
@@ -125,6 +126,7 @@ XpGrinderTeamRow::XpGrinderTeamRow(EditableTableOption& parent_table)
     PA_ADD_OPTION(on_unknown);
     PA_ADD_OPTION(evolution_policy);
     PA_ADD_OPTION(evolution_stone);
+    PA_ADD_OPTION(training_goal);
 
     //  Cascading: when species changes, rebuild this row's move database so
     //  the four desired-move dropdowns only show moves the chain can learn.
@@ -186,6 +188,7 @@ std::unique_ptr<EditableTableRow> XpGrinderTeamRow::clone() const{
     ret->on_unknown.set(on_unknown);
     ret->evolution_policy.set(evolution_policy);
     ret->evolution_stone.set(evolution_stone);
+    ret->training_goal.set(training_goal);
     return ret;
 }
 
@@ -295,6 +298,7 @@ std::vector<std::string> XpGrinderTeamTable::make_header() const{
         "On Unknown",
         "Evolution Policy",
         "Evolution Stone",
+        "Training Goal",
     };
 }
 
@@ -336,6 +340,13 @@ EvolutionStoneItem XpGrinderTeamTable::evolution_stone_for(size_t pokemon) const
         return EvolutionStoneItem::None;
     }
     return table[pokemon]->evolution_stone;
+}
+TrainingGoalType XpGrinderTeamTable::training_goal_for(size_t pokemon) const{
+    auto table = copy_snapshot();
+    if (pokemon >= table.size()){
+        return TrainingGoalType::Indefinite;
+    }
+    return table[pokemon]->training_goal;
 }
 MoveLearnDecider XpGrinderTeamTable::make_decider(size_t pokemon) const{
     return MoveLearnDecider(desired_for(pokemon), on_unknown_for(pokemon));

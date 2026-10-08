@@ -287,6 +287,7 @@ const std::map<std::string, TestFunction> TEST_MAP = {
     {"PokemonFRLG_ForgetMoveScreenReader", std::bind(image_words_detector_helper, test_pokemonFRLG_ForgetMoveScreenReader, _1)},
     {"PokemonFRLG_MoveLearnDecider", test_pokemonFRLG_MoveLearnDecider},
     {"PokemonFRLG_EvolutionPolicy", test_pokemonFRLG_EvolutionPolicy},
+    {"PokemonFRLG_TrainingGoal", test_pokemonFRLG_TrainingGoal},
 };
 
 TestFunction find_test_function(const std::string& test_space, const std::string& test_name){

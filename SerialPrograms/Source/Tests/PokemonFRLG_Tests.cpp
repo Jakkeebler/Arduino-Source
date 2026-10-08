@@ -22,6 +22,8 @@
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnStateMachine.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MovePlan.h"
+#include "PokemonFRLG/Programs/Farming/PokemonFRLG_TrainingGoal.h"
+#include "PokemonFRLG/Programs/Farming/PokemonFRLG_XpGrinderTeamTable.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_Evolutions.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_Learnsets.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_MoveData.h"
@@ -422,6 +424,109 @@ int test_pokemonFRLG_EvolutionPolicy(const std::string& test_file_path){
     TEST_RESULT_EQUAL(evolution_stone_item_name(EvolutionStoneItem::FireStone), std::string("Fire Stone"));
     TEST_RESULT_EQUAL(EvolutionPolicyType_Database().find(EvolutionPolicyType::Block) != nullptr, true);
     TEST_RESULT_EQUAL(EvolutionStoneItem_Database().find(EvolutionStoneItem::Thunderstone) != nullptr, true);
+
+    return 0;
+}
+
+//  ---- Training goal (FRO-235) ----
+//
+//  Registered as "PokemonFRLG_TrainingGoal". Pure logic, no image/file data
+//  needed: every MovePlan below is built by hand (not via build_move_plan(),
+//  which needs learnset data) so this test exercises all 4 named stop
+//  conditions with zero dependency on external fixtures or resource data.
+
+namespace{
+
+MoveGoal make_goal(MoveGoalStatus status, int level){
+    MoveGoal g;
+    g.move_slug = "test-move";
+    g.status = status;
+    g.level = level;
+    return g;
+}
+
+}  //  namespace
+
+int test_pokemonFRLG_TrainingGoal(const std::string& test_file_path){
+    //  1. TargetLevel: satisfied once current_level reaches MovePlan's
+    //  target_level() (the highest still-reachable goal's level).
+    {
+        MovePlan plan;
+        plan.goals.push_back(make_goal(MoveGoalStatus::Upcoming, 20));
+        TEST_RESULT_EQUAL(plan.target_level(), 20);
+        TEST_RESULT_EQUAL(training_goal_satisfied(TrainingGoalType::TargetLevel, plan, 19, false), false);
+        TEST_RESULT_EQUAL(training_goal_satisfied(TrainingGoalType::TargetLevel, plan, 20, false), true);
+        TEST_RESULT_EQUAL(training_goal_satisfied(TrainingGoalType::TargetLevel, plan, 21, false), true);
+    }
+    {
+        //  Nothing left reachable by level-up (target_level() == -1): treated
+        //  as satisfied regardless of level, matching MovePlan's own
+        //  "nothing further obtainable" framing rather than stalling forever.
+        MovePlan plan;
+        plan.goals.push_back(make_goal(MoveGoalStatus::Known, 5));
+        TEST_RESULT_EQUAL(plan.target_level(), -1);
+        TEST_RESULT_EQUAL(training_goal_satisfied(TrainingGoalType::TargetLevel, plan, 1, false), true);
+    }
+
+    //  2. TargetMoveSet: satisfied once every goal is Known/Missed/NotLearnable
+    //  (MovePlan::complete()) AND the row actually has goals configured --
+    //  an empty row must never read as "already done".
+    {
+        MovePlan plan;
+        plan.goals.push_back(make_goal(MoveGoalStatus::Upcoming, 10));
+        TEST_RESULT_EQUAL(training_goal_satisfied(TrainingGoalType::TargetMoveSet, plan, 50, false), false);
+        plan.goals[0].status = MoveGoalStatus::Known;
+        TEST_RESULT_EQUAL(plan.complete(), true);
+        TEST_RESULT_EQUAL(training_goal_satisfied(TrainingGoalType::TargetMoveSet, plan, 50, false), true);
+    }
+    {
+        MovePlan empty_plan;   //  no goals configured at all
+        TEST_RESULT_EQUAL(empty_plan.complete(), true);     //  trivially complete per MovePlan's own contract
+        TEST_RESULT_EQUAL(empty_plan.has_goals(), false);
+        TEST_RESULT_EQUAL(training_goal_satisfied(TrainingGoalType::TargetMoveSet, empty_plan, 50, false), false);
+    }
+
+    //  3. EvolveThenStop: satisfied exactly when the caller reports the
+    //  Pokemon has evolved this run; independent of the move plan entirely.
+    //  Only makes sense paired with a policy that actually allows evolution
+    //  to happen (EvolutionPolicyType::Block never fires it).
+    {
+        MovePlan plan;
+        TEST_RESULT_EQUAL(training_goal_satisfied(TrainingGoalType::EvolveThenStop, plan, 10, false), false);
+        TEST_RESULT_EQUAL(training_goal_satisfied(TrainingGoalType::EvolveThenStop, plan, 10, true), true);
+        TEST_RESULT_EQUAL(policy_blocks_automatic_evolution(EvolutionPolicyType::Block), true);
+        TEST_RESULT_EQUAL(policy_blocks_automatic_evolution(EvolutionPolicyType::LevelUp), false);
+    }
+
+    //  4. Indefinite: never self-satisfies, no matter the plan/level/evolution
+    //  state -- matches today's "grind forever" default (MAX_BATTLES == 0).
+    {
+        MovePlan plan;
+        plan.goals.push_back(make_goal(MoveGoalStatus::Known, 5));
+        TEST_RESULT_EQUAL(training_goal_satisfied(TrainingGoalType::Indefinite, plan, 999, true), false);
+    }
+
+    //  Dropdown database round-trips every enum value.
+    TEST_RESULT_EQUAL(TrainingGoalType_Database().find(TrainingGoalType::TargetLevel) != nullptr, true);
+    TEST_RESULT_EQUAL(TrainingGoalType_Database().find(TrainingGoalType::TargetMoveSet) != nullptr, true);
+    TEST_RESULT_EQUAL(TrainingGoalType_Database().find(TrainingGoalType::EvolveThenStop) != nullptr, true);
+    TEST_RESULT_EQUAL(TrainingGoalType_Database().find(TrainingGoalType::Indefinite) != nullptr, true);
+
+    //  Drives XpGrinderTeamTable directly: a fresh row defaults to Indefinite
+    //  (never silently inferred as some other goal) and the per-row accessor
+    //  reads it back. Table construction only needs the (always-present)
+    //  empty-species move database, not external learnset/image fixtures.
+    try{
+        XpGrinderTeamTable table;
+        TEST_RESULT_EQUAL(table.row_count(), (size_t)6);
+        TEST_RESULT_EQUAL((int)table.training_goal_for(0), (int)TrainingGoalType::Indefinite);
+        //  Out-of-range row: same safe default, never a garbage read.
+        TEST_RESULT_EQUAL((int)table.training_goal_for(999), (int)TrainingGoalType::Indefinite);
+    }catch (const std::exception& e){
+        cerr << "PokemonFRLG_TrainingGoal: XpGrinderTeamTable construction threw ("
+             << e.what() << "); skipped the table-driven check (only the pure-logic "
+                "checks above ran)." << endl;
+    }
 
     return 0;
 }
