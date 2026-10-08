@@ -28,6 +28,7 @@
 #include "PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.h"
 #include "PokemonFRLG/PokemonFRLG_Navigation.h"
 #include "PokemonFRLG/Resources/PokemonFRLG_Evolutions.h"
+#include "PokemonFRLG_DecisionLog.h"
 #include "PokemonFRLG_EvolutionPolicy.h"
 #include "PokemonFRLG_MoveLearnDecider.h"
 #include "PokemonFRLG_MovePlan.h"
@@ -907,6 +908,15 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         "'. Set it by hand if that is wrong -- move planning depends on it.",
                         COLOR_RED
                     );
+                    env.log(
+                        DecisionRecord(DecisionType::OcrConfidence)
+                            .field("slot", (long long)r.slot_1indexed)
+                            .field("confidence", species_confidence_name(r.species_confidence))
+                            .field("kept_species", current_row.empty() ? std::string("(unset)") : current_row)
+                            .outcome("flagged_low_confidence")
+                            .to_line(),
+                        COLOR_RED
+                    );
                     stats.errors++;
                 }
                 //  Auto-update the team-table species cell when the scan
@@ -1109,10 +1119,25 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                 );
                 try{
                     kanto_navigate_to(env, context, grind_goal, grind_goal);
+                    env.log(
+                        DecisionRecord(DecisionType::PositionDrift)
+                            .field("battles_since_check", (long long)BATTLES_PER_DRIFT_CHECK)
+                            .outcome("recentered")
+                            .to_line(),
+                        COLOR_BLUE
+                    );
                 }catch (const OperationFailedException& e){
                     env.log(
                         std::string("Drift check could not complete (continuing anyway): ") +
                             e.message(),
+                        COLOR_RED
+                    );
+                    env.log(
+                        DecisionRecord(DecisionType::PositionDrift)
+                            .field("battles_since_check", (long long)BATTLES_PER_DRIFT_CHECK)
+                            .field("error", e.message())
+                            .outcome("skipped_will_retry_next_heal_trip")
+                            .to_line(),
                         COLOR_RED
                     );
                 }
@@ -1327,6 +1352,19 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                     if (policy_blocks_automatic_evolution(policy)){
                         prevent_evo = true;
                     }
+                    env.log(
+                        DecisionRecord(DecisionType::EvolutionPolicy)
+                            .field("rotation", (long long)party.current_rotation)
+                            .field("species", TEAM_TABLE.species_for(table_index))
+                            .field("policy", [&]{
+                                const EnumEntry* e = EvolutionPolicyType_Database().find(policy);
+                                return e != nullptr ? e->slug : std::string("unknown");
+                            }())
+                            .field("level", (long long)party.level[party.current_rotation])
+                            .outcome(prevent_evo ? "evolution_blocked" : "evolution_allowed")
+                            .to_line(),
+                        COLOR_BLUE
+                    );
 
                     //  Pre-level-up evolution guard (scope item 2): if this
                     //  Pokemon is one level away from a level-up evolution that
@@ -1479,11 +1517,30 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
                         }else{
                             env.log(party.plan[rot].to_log_string(), COLOR_BLUE);
                         }
+                        env.log(
+                            DecisionRecord(DecisionType::MoveLearn)
+                                .field("rotation", (long long)rot)
+                                .field("species", TEAM_TABLE.species_for(rot))
+                                .field("level", (long long)party.level[rot])
+                                .field("target_level", (long long)party.plan[rot].target_level())
+                                .outcome(party.plan[rot].complete() ? "goal_complete" : "goal_pending")
+                                .to_line(),
+                            COLOR_BLUE
+                        );
                     }
 
                     //  Whole-team completion check.
                     if (STOP_WHEN_TEAM_COMPLETE && party.any_plan_has_goals() && party.all_plans_complete()){
                         env.log("Every party member now has its desired moveset. Stopping.", COLOR_BLUE);
+                        env.log(
+                            DecisionRecord(DecisionType::StopCondition)
+                                .field("condition", std::string("target_move_set"))
+                                .field("max_battles", (long long)(uint64_t)MAX_BATTLES)
+                                .field("battles_won", (long long)stats.battles_won.load())
+                                .outcome("stopping")
+                                .to_line(),
+                            COLOR_BLUE
+                        );
                         send_program_notification(
                             env,
                             NOTIFICATION_STATUS_UPDATE,
@@ -1786,6 +1843,19 @@ void XPGrinder::program(SingleSwitchProgramEnvironment& env, ProControllerContex
             continue;
         }
     }
+    env.log(
+        DecisionRecord(DecisionType::StopCondition)
+            .field(
+                "condition",
+                (uint64_t)MAX_BATTLES == 0 ? std::string("indefinite") : std::string("max_battles")
+            )
+            .field("max_battles", (long long)(uint64_t)MAX_BATTLES)
+            .field("battles_won", (long long)stats.battles_won.load())
+            .field("explicit_stop_requested", stop_program)
+            .outcome("loop_exited")
+            .to_line(),
+        COLOR_BLUE
+    );
     if (GO_HOME_WHEN_DONE){
         pbf_press_button(context, BUTTON_HOME, 200ms, 1000ms);
     }
