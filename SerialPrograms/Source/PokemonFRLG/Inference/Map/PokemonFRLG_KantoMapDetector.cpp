@@ -13,39 +13,28 @@
 #include "CommonFramework/Globals.h"
 #include "CommonFramework/Logging/Logger.h"
 #include "PokemonFRLG_KantoMapDetector.h"
+#include "PokemonFRLG_KantoRegions_Generated.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
 namespace PokemonFRLG{
 
 const char* kanto_region_name(KantoRegion r){
-    switch (r){
-    case KantoRegion::ViridianCity:   return "Viridian City";
-    case KantoRegion::Route1:         return "Route 1";
-    case KantoRegion::PalletTown:     return "Pallet Town";
-    case KantoRegion::ViridianForest: return "Viridian Forest";
-    case KantoRegion::OffMap:         return "off-map";
-    }
-    return "?";
+    return r;
 }
 
-//  Approximate sub-region boundaries on the full Kanto map.
-//  Used only for log labels - navigation operates on global tile coords.
+//  Sub-region boundaries on the full Kanto map, looked up from the generated
+//  per-region bounds table (every outdoor city/route plus packed-in interior
+//  dungeons). Used only for log labels - navigation operates on global tile
+//  coords.
 KantoRegion kanto_region_at(int tile_x, int tile_y){
-    if (tile_y >= 180 && tile_y < 215 && tile_x >= 50 && tile_x < 100){
-        return KantoRegion::ViridianCity;
+    for (const KantoRegionBounds& region : KANTO_REGIONS){
+        if (tile_x >= region.x0 && tile_x < region.x1 &&
+            tile_y >= region.y0 && tile_y < region.y1){
+            return region.name;
+        }
     }
-    if (tile_y >= 215 && tile_y < 260 && tile_x >= 55 && tile_x < 85){
-        return KantoRegion::Route1;
-    }
-    if (tile_y >= 260 && tile_y < 285 && tile_x >= 55 && tile_x < 85){
-        return KantoRegion::PalletTown;
-    }
-    //  Stitched-in interior region (bottom-right corner of the combined map).
-    if (tile_y >= 331 && tile_y < 400 && tile_x >= 354 && tile_x < 408){
-        return KantoRegion::ViridianForest;
-    }
-    return KantoRegion::OffMap;
+    return KantoRegion_OffMap;
 }
 
 namespace{

@@ -21,14 +21,11 @@ namespace NintendoSwitch{
 namespace PokemonFRLG{
 
 //  Logical sub-region of the combined Kanto map. Used only for log messages.
-enum class KantoRegion{
-    ViridianCity,
-    Route1,
-    PalletTown,
-    ViridianForest,  //  Interior, stitched into the bottom-right corner of
-                     //  the combined map at tile cols 354..407, rows 331..399.
-    OffMap,          //  Outside any of the named sub-maps (tree-fill border etc.).
-};
+//  Backed by the generated per-region bounds table (PokemonFRLG_KantoRegions_Generated.h)
+//  covering every outdoor city/route plus packed-in interior dungeons, instead of a
+//  hardcoded enum for a handful of regions.
+using KantoRegion = const char*;
+constexpr const char* KantoRegion_OffMap = "off-map";
 
 const char* kanto_region_name(KantoRegion r);
 KantoRegion kanto_region_at(int tile_x, int tile_y);

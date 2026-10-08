@@ -2,9 +2,15 @@
  *
  *  From: https://github.com/PokemonAutomation/
  *
- *  A*-driven navigation across the combined Kanto map (Viridian + Route 1
- *  + Pallet stitched into one image). Tile coordinates are GLOBAL on the
- *  combined map. Handles encounters (flee + retry) and door-fade success.
+ *  A*-driven navigation across the combined Kanto map: every outdoor city and
+ *  route, plus key interior dungeons (Viridian Forest, Mt. Moon, Diglett's
+ *  Cave, Rock Tunnel, the Underground Paths, Cerulean Cave) and the walled-off
+ *  Saffron City, all stitched/packed into one 408x400 tile image. Tile
+ *  coordinates are GLOBAL on the combined map. Handles encounters (flee +
+ *  retry) and door-fade success.
+ *
+ *  See PokemonFRLG_KantoGoals_Extended.h for the full generated set of every
+ *  building/cave/gym/pokecenter door and every Fly destination.
  */
 
 #ifndef PokemonAutomation_PokemonFRLG_KantoMapNavigator_H
