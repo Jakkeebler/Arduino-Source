@@ -16,6 +16,8 @@
 #include "PokemonFRLG_AutoStory_Segment_B0_03.h"
 #include "PokemonFRLG_AutoStory_Segment_B0_04.h"
 #include "PokemonFRLG_AutoStory_Segment_B0_05.h"
+#include "PokemonFRLG_AutoStory_Segment_B4a.h"
+#include "PokemonFRLG_AutoStory_Segment_B4b.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -128,6 +130,57 @@ public:
     }
 };
 
+//  Real implementation of Phase::B4a: Vermilion Gym (Thunder Badge in hand)
+//  -> Route 6 -> Rock Tunnel -> Lavender Town. See
+//  PokemonFRLG_AutoStory_Segment_B4a.h for the full start/end state and
+//  caveats.
+class AutoStory_Segment_B4a : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B4a);
+    }
+    virtual std::string start_text() const override{
+        return "Outside the Vermilion Gym, Thunder Badge in hand.";
+    }
+    virtual std::string end_text() const override{
+        return "In Lavender Town, having passed through Rock Tunnel.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B4a_vermilion_to_lavender(env, context, options, stats);
+    }
+};
+
+//  Real implementation of Phase::B4b: Lavender Town -> Celadon City ->
+//  Erika -> Rainbow Badge (+ TM19 Giga Drain). See
+//  PokemonFRLG_AutoStory_Segment_B4b.h for the full start/end state, scope
+//  notes (Dept Store/Game Corner/Strength HM deliberately out of scope
+//  here), and caveats.
+class AutoStory_Segment_B4b : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B4b);
+    }
+    virtual std::string start_text() const override{
+        return "In Lavender Town, heading for Celadon City.";
+    }
+    virtual std::string end_text() const override{
+        return "Rainbow Badge won. Outside the Celadon Gym.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B4b_lavender_to_celadon_erika(env, context, options, stats);
+    }
+};
+
 }  //  anonymous namespace
 
 
@@ -147,8 +200,8 @@ const std::vector<std::unique_ptr<AutoStory_Segment>>& ALL_AUTO_STORY_SEGMENT_LI
         add(Phase::B3a, "Outside the Cerulean Gym, Cascade Badge in hand.",                           "Standing at the S.S. Anne gangplank in Vermilion City.");
         add(Phase::B3b, "At the S.S. Anne gangplank, about to board.",                                 "Off the S.S. Anne with Cut taught, back in Vermilion City.");
         add(Phase::B3c, "In Vermilion City with Cut, heading for the Vermilion Gym.",                  "Thunder Badge won. Outside the Vermilion Gym.");
-        add(Phase::B4a, "Outside the Vermilion Gym, Thunder Badge in hand.",                           "In Lavender Town, having passed through Rock Tunnel.");
-        add(Phase::B4b, "In Lavender Town, heading for Celadon City.",                                 "Rainbow Badge won. Outside the Celadon Gym.");
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B4a>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B4b>());
         add(Phase::B5a, "Outside the Celadon Gym, Rainbow Badge in hand.",                             "At the entrance to Pokemon Tower in Lavender Town.");
         add(Phase::B5b, "At the entrance to Pokemon Tower.",                                           "At the top of Pokemon Tower, Mr. Fuji rescued.");
         add(Phase::B5c, "Mr. Fuji rescued, heading for Fuchsia City.",                                 "Soul Badge won. Outside the Fuchsia Gym.");
