@@ -1598,6 +1598,24 @@ file(GLOB LIBRARY_SOURCES
     Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory.h
     Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStoryTools.cpp
     Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStoryTools.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_00.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_00.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_01.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_01.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_02.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_02.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_03.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_03.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_04.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_04.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_05.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B0_05.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B2a.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B2a.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B2b.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B2b.h
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B2c.cpp
+    Source/PokemonFRLG/Programs/AutoStory/PokemonFRLG_AutoStory_Segment_B2c.h
     Source/PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.cpp
     Source/PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.h
     Source/PokemonFRLG/Programs/PokemonFRLG_RoutePaths.cpp

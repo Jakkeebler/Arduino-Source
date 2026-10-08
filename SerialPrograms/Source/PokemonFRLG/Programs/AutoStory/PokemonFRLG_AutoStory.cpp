@@ -16,6 +16,9 @@
 #include "PokemonFRLG_AutoStory_Segment_B0_03.h"
 #include "PokemonFRLG_AutoStory_Segment_B0_04.h"
 #include "PokemonFRLG_AutoStory_Segment_B0_05.h"
+#include "PokemonFRLG_AutoStory_Segment_B2a.h"
+#include "PokemonFRLG_AutoStory_Segment_B2b.h"
+#include "PokemonFRLG_AutoStory_Segment_B2c.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -128,6 +131,77 @@ public:
     }
 };
 
+//  Real implementation of Phase::B2a (Route 3 -> Mt. Moon entrance). See
+//  PokemonFRLG_AutoStory_Segment_B2a.h for the caveats/first-pass notes.
+class AutoStory_Segment_B2a : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B2a);
+    }
+    virtual std::string start_text() const override{
+        return "Outside the Pewter Gym, Boulder Badge in hand.";
+    }
+    virtual std::string end_text() const override{
+        return "Standing at the entrance to Mt. Moon.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B2a_route3_to_mtmoon(env, context, options, stats);
+    }
+};
+
+//  Real implementation of Phase::B2b (Mt. Moon traversal). See
+//  PokemonFRLG_AutoStory_Segment_B2b.h for the caveats/first-pass notes.
+class AutoStory_Segment_B2b : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B2b);
+    }
+    virtual std::string start_text() const override{
+        return "At the entrance to Mt. Moon.";
+    }
+    virtual std::string end_text() const override{
+        return "At the far (Route 4) exit of Mt. Moon.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B2b_mtmoon_traversal(env, context, options, stats);
+    }
+};
+
+//  Real implementation of Phase::B2c (Mt. Moon exit -> Cerulean Gym ->
+//  Cascade Badge). See PokemonFRLG_AutoStory_Segment_B2c.h for the
+//  caveats/first-pass notes and the out-of-scope items (Nugget Bridge,
+//  Bill, Cut HM01 -- the last belongs to B3b per this same framework).
+class AutoStory_Segment_B2c : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B2c);
+    }
+    virtual std::string start_text() const override{
+        return "At the Route 4 exit of Mt. Moon, heading for Cerulean City.";
+    }
+    virtual std::string end_text() const override{
+        return "Cascade Badge won. Outside the Cerulean Gym.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B2c_cerulean_gym(env, context, options, stats);
+    }
+};
+
 }  //  anonymous namespace
 
 
@@ -141,9 +215,9 @@ const std::vector<std::unique_ptr<AutoStory_Segment>>& ALL_AUTO_STORY_SEGMENT_LI
         ret.emplace_back(std::make_unique<AutoStory_Segment_B0>());
         add(Phase::B1a, "On Route 2, just north of Viridian Forest's north exit.",                   "Standing in front of the Pewter Gym door.");
         add(Phase::B1b, "Standing in front of the Pewter Gym door, about to enter.",                 "Boulder Badge won. Outside the Pewter Gym.");
-        add(Phase::B2a, "Outside the Pewter Gym, Boulder Badge in hand.",                            "Standing at the entrance to Mt. Moon.");
-        add(Phase::B2b, "At the entrance to Mt. Moon.",                                              "At the far (Route 4) exit of Mt. Moon.");
-        add(Phase::B2c, "At the Route 4 exit of Mt. Moon, heading for Cerulean City.",                "Cascade Badge won. Outside the Cerulean Gym.");
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B2a>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B2b>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B2c>());
         add(Phase::B3a, "Outside the Cerulean Gym, Cascade Badge in hand.",                           "Standing at the S.S. Anne gangplank in Vermilion City.");
         add(Phase::B3b, "At the S.S. Anne gangplank, about to board.",                                 "Off the S.S. Anne with Cut taught, back in Vermilion City.");
         add(Phase::B3c, "In Vermilion City with Cut, heading for the Vermilion Gym.",                  "Thunder Badge won. Outside the Vermilion Gym.");
