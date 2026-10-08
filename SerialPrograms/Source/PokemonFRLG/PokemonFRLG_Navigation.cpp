@@ -1539,6 +1539,18 @@ void leave_pokecenter(ConsoleHandle& console, ProControllerContext& context){
     enter_leave_pokecenter(console, context, true);
 }
 
+//  enter_leave_pokecenter() has no Pokemon-Center-specific logic -- it is
+//  just "walk onto the door tile and wait for the black-screen fade", which
+//  is the same for every building sprite in the game (Gyms included). Reuse
+//  it directly rather than duplicating the loop.
+void enter_gym(ConsoleHandle& console, ProControllerContext& context){
+    enter_leave_pokecenter(console, context, false);
+}
+
+void leave_gym(ConsoleHandle& console, ProControllerContext& context){
+    enter_leave_pokecenter(console, context, true);
+}
+
 void heal_at_pokecenter(ConsoleHandle& console, ProControllerContext& context){
     uint16_t errors = 0;
 

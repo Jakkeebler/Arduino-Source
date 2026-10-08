@@ -61,6 +61,14 @@ namespace KantoGoals{
     constexpr KantoGoal FuchsiaPokeCenterEntrance   {217, 332, 0};
     constexpr KantoGoal CinnabarPokeCenterEntrance  { 74, 392, 0};
 
+    //  Derived directly from the generated warp_events door tile for the
+    //  Pewter Gym ({63, 76}) using the same "entrance = (door_x, door_y + 1)"
+    //  convention as the Pokemon Center entrances above: one tile south of
+    //  the door, so navigate_to() stops in front of it instead of walking
+    //  onto the warp tile and triggering the fade mid-navigation. enter_gym()
+    //  does the final north walk into the door.
+    constexpr KantoGoal PewterGymEntrance           { 63,  77, 0};
+
     //  ---- Encounter-grass spots ----
     //
     //  Derived by matching the tall-grass tile across the combined map,

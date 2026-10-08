@@ -41,13 +41,12 @@ enum class CheckpointMode{
     START_FROM_CHECKPOINT,
 };
 
-//  Which building-entry/exit routine to use. Only Pokemon Centers are wired
-//  up for now because they are the only building the lower-level navigation
-//  library (PokemonFRLG_Navigation.h) supports entering/leaving generically.
-//  Add new enumerators here (and in enter_building()/exit_building()) as
-//  more building types get their own navigation helpers.
+//  Which building-entry/exit routine to use. Add new enumerators here (and
+//  in enter_building()/exit_building()) as more building types get their own
+//  navigation helpers in PokemonFRLG_Navigation.h.
 enum class BuildingType{
     POKECENTER,
+    GYM,
 };
 
 
