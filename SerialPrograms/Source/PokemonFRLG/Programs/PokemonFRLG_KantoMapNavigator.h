@@ -91,6 +91,35 @@ namespace KantoGoals{
     //  Retained so existing saved configs and any other callers keep building.
     //  Prefer Route1NorthGrass for grinding.
     constexpr KantoGoal Route1NorthGrassCorner{62, 222, 1};
+
+    //  ---- Phase B5 (Soul Badge) building doors ----
+    //
+    //  UNVERIFIED / ESTIMATED: unlike the Pokemon-Center/grass goals above
+    //  (which were derived by template-matching their sprite across
+    //  Kanto-Combined.png and confirmed walkable against KANTO_MASK), these
+    //  four were placed by relative position to their already-verified
+    //  neighboring PokeCenter anchor, because the interior-dungeon sprite
+    //  set documented at the top of this file (Pokemon Tower, the Celadon
+    //  Game Corner / Rocket Hideout, Fuchsia Gym, Safari Zone) hasn't been
+    //  template-matched yet. Before relying on these for a real run, verify
+    //  (and correct) them with Scripts/PokemonFRLG/kanto_zoom_crop.py (crop +
+    //  grid the artwork) and Scripts/PokemonFRLG/kanto_reachability.py
+    //  (confirm the goal tile is actually walkable / reachable).
+    constexpr KantoGoal PokemonTowerEntrance        {383, 136, 0};
+    constexpr KantoGoal CeladonGameCornerEntrance   {224, 132, 0};
+    constexpr KantoGoal FuchsiaGymEntrance          {217, 340, 0};
+    constexpr KantoGoal FuchsiaSafariZoneEntrance   {236, 332, 0};
+
+    //  ---- Phase B1 (Boulder Badge) building doors ----
+    //
+    //  Derived directly from the generated warp_events door tile
+    //  (KantoGoals::Extended::PewterCityGymDoor, {63, 76}) using the same
+    //  "entrance = (door_x, door_y + 1)" convention documented above for the
+    //  Pokemon Center entrances: one tile south of the door, so navigate_to()
+    //  stops in front of it instead of walking onto the warp tile and
+    //  triggering the fade mid-navigation. Tolerance 0 for the same reason as
+    //  the Pokemon Centers -- enter_gym() walks straight north into the door.
+    constexpr KantoGoal PewterGymEntrance           { 63,  77, 0};
 }
 
 

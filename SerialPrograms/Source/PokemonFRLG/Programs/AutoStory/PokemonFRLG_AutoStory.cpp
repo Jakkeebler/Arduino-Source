@@ -16,6 +16,11 @@
 #include "PokemonFRLG_AutoStory_Segment_B0_03.h"
 #include "PokemonFRLG_AutoStory_Segment_B0_04.h"
 #include "PokemonFRLG_AutoStory_Segment_B0_05.h"
+#include "PokemonFRLG_AutoStory_Segment_B1a.h"
+#include "PokemonFRLG_AutoStory_Segment_B1b.h"
+#include "PokemonFRLG_AutoStory_Segment_B5a.h"
+#include "PokemonFRLG_AutoStory_Segment_B5b.h"
+#include "PokemonFRLG_AutoStory_Segment_B5c.h"
 
 namespace PokemonAutomation{
 namespace NintendoSwitch{
@@ -128,6 +133,121 @@ public:
     }
 };
 
+//  Real implementation of Phase::B1a (Route 2 -> Pewter City -> Pewter Gym
+//  entrance). See PokemonFRLG_AutoStory_Segment_B1a.h/.cpp for the actual
+//  logic and known caveats (not hardware-verified yet).
+class AutoStory_Segment_B1a : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B1a);
+    }
+    virtual std::string start_text() const override{
+        return "On Route 2, just north of Viridian Forest's north exit.";
+    }
+    virtual std::string end_text() const override{
+        return "Standing in front of the Pewter Gym door.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B1a_route2_pewter_gym_entrance(env, context, options, stats);
+    }
+};
+
+//  Real implementation of Phase::B1b (Pewter Gym -> Brock battle -> Boulder
+//  Badge). See PokemonFRLG_AutoStory_Segment_B1b.h/.cpp for the actual
+//  logic and known caveats (not hardware-verified yet).
+class AutoStory_Segment_B1b : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B1b);
+    }
+    virtual std::string start_text() const override{
+        return "Standing in front of the Pewter Gym door, about to enter.";
+    }
+    virtual std::string end_text() const override{
+        return "Boulder Badge won. Outside the Pewter Gym.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B1b_pewter_gym_brock_battle(env, context, options, stats);
+    }
+};
+
+//  Real implementations of Phase::B5a/B5b/B5c (Soul Badge). Each is a thin
+//  wrapper matching the AutoStory_Segment_B0 pattern above; see
+//  PokemonFRLG_AutoStory_Segment_B5{a,b,c}.h/.cpp for the actual logic and
+//  known caveats (first-pass/not hardware-verified in several places).
+class AutoStory_Segment_B5a : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B5a);
+    }
+    virtual std::string start_text() const override{
+        return "Outside the Celadon Gym, Rainbow Badge in hand.";
+    }
+    virtual std::string end_text() const override{
+        return "At the entrance to Pokemon Tower in Lavender Town.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B5a_celadon_hideout_to_tower(env, context, options, stats);
+    }
+};
+
+class AutoStory_Segment_B5b : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B5b);
+    }
+    virtual std::string start_text() const override{
+        return "At the entrance to Pokemon Tower.";
+    }
+    virtual std::string end_text() const override{
+        return "At the top of Pokemon Tower, Mr. Fuji rescued.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B5b_pokemon_tower(env, context, options, stats);
+    }
+};
+
+class AutoStory_Segment_B5c : public AutoStory_Segment{
+public:
+    virtual std::string name() const override{
+        return phase_name(Phase::B5c);
+    }
+    virtual std::string start_text() const override{
+        return "Mr. Fuji rescued, heading for Fuchsia City.";
+    }
+    virtual std::string end_text() const override{
+        return "Soul Badge won. Outside the Fuchsia Gym.";
+    }
+    virtual void run_segment(
+        SingleSwitchProgramEnvironment& env,
+        ProControllerContext& context,
+        const AutoStoryOptions& options,
+        AutoStoryStats& stats
+    ) const override{
+        run_B5c_koga_soul_badge(env, context, options, stats);
+    }
+};
+
 }  //  anonymous namespace
 
 
@@ -139,8 +259,8 @@ const std::vector<std::unique_ptr<AutoStory_Segment>>& ALL_AUTO_STORY_SEGMENT_LI
         };
 
         ret.emplace_back(std::make_unique<AutoStory_Segment_B0>());
-        add(Phase::B1a, "On Route 2, just north of Viridian Forest's north exit.",                   "Standing in front of the Pewter Gym door.");
-        add(Phase::B1b, "Standing in front of the Pewter Gym door, about to enter.",                 "Boulder Badge won. Outside the Pewter Gym.");
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B1a>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B1b>());
         add(Phase::B2a, "Outside the Pewter Gym, Boulder Badge in hand.",                            "Standing at the entrance to Mt. Moon.");
         add(Phase::B2b, "At the entrance to Mt. Moon.",                                              "At the far (Route 4) exit of Mt. Moon.");
         add(Phase::B2c, "At the Route 4 exit of Mt. Moon, heading for Cerulean City.",                "Cascade Badge won. Outside the Cerulean Gym.");
@@ -149,9 +269,9 @@ const std::vector<std::unique_ptr<AutoStory_Segment>>& ALL_AUTO_STORY_SEGMENT_LI
         add(Phase::B3c, "In Vermilion City with Cut, heading for the Vermilion Gym.",                  "Thunder Badge won. Outside the Vermilion Gym.");
         add(Phase::B4a, "Outside the Vermilion Gym, Thunder Badge in hand.",                           "In Lavender Town, having passed through Rock Tunnel.");
         add(Phase::B4b, "In Lavender Town, heading for Celadon City.",                                 "Rainbow Badge won. Outside the Celadon Gym.");
-        add(Phase::B5a, "Outside the Celadon Gym, Rainbow Badge in hand.",                             "At the entrance to Pokemon Tower in Lavender Town.");
-        add(Phase::B5b, "At the entrance to Pokemon Tower.",                                           "At the top of Pokemon Tower, Mr. Fuji rescued.");
-        add(Phase::B5c, "Mr. Fuji rescued, heading for Fuchsia City.",                                 "Soul Badge won. Outside the Fuchsia Gym.");
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B5a>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B5b>());
+        ret.emplace_back(std::make_unique<AutoStory_Segment_B5c>());
         add(Phase::B6a, "Outside the Fuchsia Gym, Soul Badge in hand.",                                "Exited the Safari Zone with Surf and Strength obtained.");
         add(Phase::B6b, "Surf and Strength obtained, heading for Cinnabar Island.",                    "Marsh Badge won. Outside the Cinnabar Gym.");
         add(Phase::B7a, "Outside the Cinnabar Gym, Marsh Badge in hand.",                              "Exited Pokemon Mansion, standing outside the Cinnabar Gym.");
