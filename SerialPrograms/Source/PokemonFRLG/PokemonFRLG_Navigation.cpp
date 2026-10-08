@@ -33,6 +33,9 @@
 #include "PokemonFRLG/Inference/Menus/PokemonFRLG_PartyMenuDetector.h"
 #include "PokemonFRLG/Inference/Map/PokemonFRLG_MapDetector.h"
 #include "PokemonFRLG/Inference/PokemonFRLG_BattlePokemonDetector.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_GrindHealLocations.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_KantoMapNavigator.h"
+#include "PokemonFRLG/Programs/PokemonFRLG_MenuConfirmGuard.h"
 #include "PokemonFRLG/Programs/PokemonFRLG_StartMenuNavigation.h"
 #include "PokemonFRLG/Programs/PokemonFRLG_BattleMenuNavigation.h"
 #include "PokemonFRLG/Programs/Farming/PokemonFRLG_MoveLearnDecider.h"
@@ -1333,6 +1336,61 @@ void use_teleport_from_overworld(ConsoleHandle& console, ProControllerContext& c
     }
 }
 
+void use_teleport_from_overworld(ConsoleHandle& console, ProControllerContext& context, HealLocationId expected_destination){
+    while (true){
+        use_teleport_from_overworld(console, context);
+
+        //  FRO-225: Teleport always lands at the last-visited Pokemon
+        //  Center -- verify we actually ended up there rather than trusting
+        //  the black-screen transition alone (e.g. the last-visited PC
+        //  tracking was stale, or Teleport wasn't actually usable and some
+        //  other menu item got pressed instead).
+        const KantoGoal& expected_tile = pc_entrance_for_heal_location(expected_destination);
+        MenuConfirmGuard arrival_guard(3);
+        bool confirmed = false;
+        bool gave_up = false;
+        while (!confirmed && !gave_up){
+            VideoSnapshot snap = console.video().snapshot();
+            int arrived_x = 0, arrived_y = 0;
+            bool arrived = snap && kanto_locate_player(*snap.frame, 0.40, arrived_x, arrived_y);
+
+            MenuConfirmGuard::Outcome outcome;
+            if (!arrived){
+                outcome = MenuConfirmGuard::Outcome::Unreadable;
+            }else{
+                int dx = std::abs(arrived_x - expected_tile.tile_x);
+                int dy = std::abs(arrived_y - expected_tile.tile_y);
+                outcome = (dx <= 25 && dy <= 25)
+                    ? MenuConfirmGuard::Outcome::Verified
+                    : MenuConfirmGuard::Outcome::Mismatch;
+            }
+
+            MenuConfirmGuard::Step step = arrival_guard.report(outcome);
+            if (step == MenuConfirmGuard::Step::Confirm){
+                console.log("Teleport used and arrival verified.");
+                confirmed = true;
+            }else if (step == MenuConfirmGuard::Step::GiveUp){
+                console.log(
+                    "Teleport arrival could not be verified near the expected "
+                    "Pokemon Center after retrying. Treating this as a failed "
+                    "Teleport attempt."
+                );
+                gave_up = true;
+            }else{
+                context.wait_for_all_requests();
+                pbf_wait(context, 2000ms);
+                context.wait_for_all_requests();
+            }
+        }
+
+        if (confirmed){
+            return;
+        }
+        //  Retry the whole Teleport attempt (re-open the party menu etc.)
+        //  rather than looping forever on an unconfirmed arrival.
+    }
+}
+
 void open_fly_map_from_overworld(ConsoleHandle& console, ProControllerContext& context){
     uint16_t errors = 0;
     while (true){
@@ -1482,15 +1540,70 @@ void fly_from_kanto_map(ConsoleHandle& console, ProControllerContext& context, K
         pbf_wait(context, 8000ms);
         context.wait_for_all_requests();
 
-        if (ret == 0) {
-            console.log("Fly initiated.");
-            return;
-        }else{
+        if (ret != 0){
             errors++;
             console.log("Failed to detect black screen within 5 seconds of attempting to fly.");
             continue;
         }
 
+        //  FRO-225: the black screen only proves a Fly-style transition
+        //  happened, not that the cursor was actually on `destination` when
+        //  A was pressed -- a mistimed joystick move could have landed on a
+        //  neighboring city and nothing above would ever have noticed. Read
+        //  back where we actually ended up and retry the whole attempt
+        //  (re-opening the map and re-aiming the cursor) if it doesn't match,
+        //  instead of silently continuing on an unconfirmed destination.
+        HealLocationId expected_heal_location;
+        if (!heal_location_for_fly_location(destination, expected_heal_location)){
+            //  No PC to check against for this destination (Pallet Town,
+            //  Indigo Plateau) -- nothing to verify arrival against, so
+            //  accept the black-screen signal alone like before.
+            console.log("Fly initiated. (No arrival check available for this destination.)");
+            return;
+        }
+
+        const KantoGoal& expected_tile = pc_entrance_for_heal_location(expected_heal_location);
+        MenuConfirmGuard arrival_guard(3);
+        while (true){
+            VideoSnapshot snap = console.video().snapshot();
+            int arrived_x = 0, arrived_y = 0;
+            bool arrived = snap && kanto_locate_player(*snap.frame, 0.40, arrived_x, arrived_y);
+
+            MenuConfirmGuard::Outcome outcome;
+            if (!arrived){
+                outcome = MenuConfirmGuard::Outcome::Unreadable;
+            }else{
+                int dx = std::abs(arrived_x - expected_tile.tile_x);
+                int dy = std::abs(arrived_y - expected_tile.tile_y);
+                //  Fly lands you somewhere in town, not necessarily right at
+                //  the PC door, so this is a coarse "same town" check, not a
+                //  tile-exact one: generous enough that a correct Fly always
+                //  passes, tight enough that landing in the wrong town (an
+                //  adjacent fly-spot entry in the switch above) still fails.
+                outcome = (dx <= 25 && dy <= 25)
+                    ? MenuConfirmGuard::Outcome::Verified
+                    : MenuConfirmGuard::Outcome::Mismatch;
+            }
+
+            MenuConfirmGuard::Step step = arrival_guard.report(outcome);
+            if (step == MenuConfirmGuard::Step::Confirm){
+                console.log("Fly initiated and arrival verified.");
+                return;
+            }
+            if (step == MenuConfirmGuard::Step::GiveUp){
+                console.log(
+                    "Fly arrival could not be verified near the expected destination "
+                    "after retrying. Treating this as a failed Fly attempt."
+                );
+                errors++;
+                break;
+            }
+            //  Retry: give the fade-in a bit longer and read again before
+            //  concluding the destination was wrong.
+            context.wait_for_all_requests();
+            pbf_wait(context, 2000ms);
+            context.wait_for_all_requests();
+        }
     }
     
 }
